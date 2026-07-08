@@ -63,8 +63,18 @@ workflows:
         script: |
           find . -name "Podfile" -execdir pod install \;
 
-      - name: Set up code signing settings on Xcode project
-        script: xcode-project use-profiles
+      - name: Fetch or create signing files (auto-provision)
+        script: |
+          # Creates the distribution certificate + App Store provisioning
+          # profile for the bundle id if they don't exist yet, then installs
+          # them on the build machine. Requires the connected App Store Connect
+          # API key to have Admin or App Manager access.
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain initialize
+          keychain add-certificates
+          xcode-project use-profiles
 
       - name: Build signed IPA
         script: |
