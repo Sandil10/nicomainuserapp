@@ -37,9 +37,10 @@ workflows:
     environment:
       groups:
         - firebase            # provides GOOGLE_SERVICE_INFO_PLIST (see step 4)
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.nicomart.app
+      # NOTE: no `ios_signing:` block here on purpose. That built-in block only
+      # *fetches* existing profiles and fails with "No matching profiles found"
+      # on a first build. Instead the "Fetch or create signing files" script
+      # below creates the cert + profile automatically with `--create`.
       vars:
         BUNDLE_ID: "com.nicomart.app"
       flutter: 3.35.4            # match the project's Flutter version
