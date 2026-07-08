@@ -42,7 +42,6 @@ workflows:
         bundle_identifier: com.nicomart.app
       vars:
         BUNDLE_ID: "com.nicomart.app"
-        APP_STORE_APPLE_ID: ""   # optional: numeric Apple ID of the app record
       flutter: 3.35.4            # match the project's Flutter version
       xcode: latest
       cocoapods: default
