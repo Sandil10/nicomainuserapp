@@ -1,0 +1,173 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "mobile/**",
+              "ui_kits/auth/**",
+              "ui_kits/feed/**",
+              "ui_kits/shop/**",
+              "ui_kits/wallet/**"
+            ],
+            "message": "Import design-system components from 'index.js', not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a design-system spacing token via var()."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Geist|Geist Mono))/i]",
+        "message": "Font not provided by the design system. Available: Geist, Geist Mono."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
+  "x-omelette": {
+    "components": {},
+    "tokens": [
+      "--accent",
+      "--accent-bg",
+      "--accent-border",
+      "--accent-deep",
+      "--accent-soft",
+      "--bg-0",
+      "--bg-1",
+      "--bg-2",
+      "--bg-3",
+      "--bg-4",
+      "--bg-5",
+      "--bg-glass",
+      "--border-1",
+      "--border-2",
+      "--border-accent",
+      "--border-faint",
+      "--border-soft",
+      "--d-base",
+      "--d-fast",
+      "--d-slow",
+      "--ease-out",
+      "--ease-snap",
+      "--fg-1",
+      "--fg-2",
+      "--fg-3",
+      "--fg-4",
+      "--fg-faint",
+      "--fg-mute",
+      "--font-mono",
+      "--font-sans",
+      "--gradient-promo",
+      "--hover-scale",
+      "--like",
+      "--pink",
+      "--press-scale",
+      "--r-lg",
+      "--r-md",
+      "--r-pill",
+      "--r-sm",
+      "--r-xl",
+      "--shadow-card",
+      "--shadow-glow-blue",
+      "--shadow-glow-purple",
+      "--shadow-press",
+      "--success",
+      "--track-mega",
+      "--track-normal",
+      "--track-tight",
+      "--track-wide",
+      "--track-widest",
+      "--utility",
+      "--utility-bright",
+      "--utility-text"
+    ],
+    "tokenKinds": {
+      "--bg-0": "color",
+      "--bg-1": "color",
+      "--bg-2": "color",
+      "--bg-3": "color",
+      "--bg-4": "color",
+      "--bg-5": "color",
+      "--bg-glass": "color",
+      "--border-1": "color",
+      "--border-2": "color",
+      "--border-soft": "color",
+      "--border-faint": "color",
+      "--border-accent": "color",
+      "--fg-1": "color",
+      "--fg-2": "color",
+      "--fg-3": "color",
+      "--fg-4": "color",
+      "--fg-mute": "color",
+      "--fg-faint": "color",
+      "--accent": "color",
+      "--accent-soft": "color",
+      "--accent-deep": "color",
+      "--accent-bg": "color",
+      "--utility": "color",
+      "--utility-bright": "color",
+      "--utility-text": "font",
+      "--like": "color",
+      "--success": "color",
+      "--pink": "color",
+      "--gradient-promo": "other",
+      "--font-sans": "font",
+      "--font-mono": "font",
+      "--track-tight": "spacing",
+      "--track-normal": "other",
+      "--track-wide": "spacing",
+      "--track-widest": "spacing",
+      "--track-mega": "spacing",
+      "--r-sm": "spacing",
+      "--r-md": "spacing",
+      "--r-lg": "spacing",
+      "--r-xl": "spacing",
+      "--r-pill": "spacing",
+      "--shadow-card": "shadow",
+      "--shadow-glow-purple": "shadow",
+      "--shadow-glow-blue": "shadow",
+      "--shadow-press": "shadow",
+      "--ease-out": "other",
+      "--ease-snap": "other",
+      "--press-scale": "other",
+      "--hover-scale": "other",
+      "--d-fast": "other",
+      "--d-base": "other",
+      "--d-slow": "other",
+      "--accent-border": "color"
+    },
+    "fontFamilies": [
+      "Geist",
+      "Geist Mono"
+    ]
+  }
+}

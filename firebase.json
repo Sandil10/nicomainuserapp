@@ -1,0 +1,31 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "aquaflow-q4fcn",
+          "appId": "1:965088107395:android:d1c8063408449f0639f4b6",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "aquaflow-q4fcn",
+          "configurations": {
+            "android": "1:965088107395:android:d1c8063408449f0639f4b6"
+          }
+        }
+      }
+    }
+  },
+  "functions": {
+    "source": "functions"
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  }
+}

@@ -1,0 +1,164 @@
+/* ============================================================
+   GOOGER — Colors & Type Tokens
+   Social-commerce dark theme. Pure black canvas, white text,
+   purple accent for auth/identity, blue for utility, red for
+   "like", green for success. Geist Sans / Geist Mono.
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;700&display=swap");
+
+:root {
+  /* ---------- Surfaces ---------- */
+  --bg-0:        #000000;   /* page canvas, login, modal backdrop */
+  --bg-1:        #18181b;   /* sidebar, topbar (with 80% + blur)  */
+  --bg-2:        #121212;   /* form inputs                        */
+  --bg-3:        #1e1e24;   /* notification dropdown              */
+  --bg-4:        #111114;   /* small popovers                     */
+  --bg-5:        #162033;   /* user-menu card (slight blue tint)  */
+  --bg-glass:    rgba(24, 24, 27, 0.80);  /* topbar w/ backdrop-blur-md */
+
+  /* ---------- Borders ---------- */
+  --border-1:    #27272a;   /* primary divider                    */
+  --border-2:    #1f1f23;   /* subtle divider on dark             */
+  --border-soft: rgba(255, 255, 255, 0.10);
+  --border-faint:rgba(255, 255, 255, 0.05);
+  --border-accent: rgba(168, 85, 247, 0.20);  /* purple/20 -- auth */
+
+  /* ---------- Foreground / Text ---------- */
+  --fg-1:        #ffffff;   /* primary text, headings             */
+  --fg-2:        #a1a1aa;   /* secondary (gray-400)               */
+  --fg-3:        #71717a;   /* tertiary (gray-500)                */
+  --fg-4:        #52525b;   /* quaternary (gray-600)              */
+  --fg-mute:     rgba(255, 255, 255, 0.40);
+  --fg-faint:    rgba(255, 255, 255, 0.10);
+
+  /* ---------- Brand / Accent ---------- */
+  --accent:        #a855f7;   /* purple-500   identity, auth      */
+  --accent-soft:   #c084fc;   /* purple-400   hover text          */
+  --accent-deep:   #7e22ce;   /* purple-700                       */
+  --accent-bg:     rgba(168, 85, 247, 0.10);
+
+  --utility:       #2563eb;   /* blue-600  cart, nav active       */
+  --utility-bright:#3b82f6;   /* blue-500                         */
+  --utility-text:  #60a5fa;   /* blue-400  links inside posts     */
+
+  --like:          #ef4444;   /* red-500   heart filled           */
+  --success:       #22c55e;   /* green-500 password OK, payouts   */
+  --pink:          #ec4899;   /* pink-500  notification dot       */
+
+  --gradient-promo:linear-gradient(90deg,#9333ea 0%,#ec4899 50%,#3b82f6 100%);
+
+  /* ---------- Type ---------- */
+  --font-sans:   "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-mono:   "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Tracking presets — Googer leans on tight + WIDE extremes */
+  --track-tight:    -0.02em;
+  --track-normal:   0;
+  --track-wide:     0.10em;
+  --track-widest:   0.14em;  /* uppercase micro-labels */
+  --track-mega:     0.50em;  /* OTP-style inputs */
+
+  /* ---------- Radii ---------- */
+  --r-sm:   8px;     /* rounded-lg            */
+  --r-md:   12px;    /* rounded-xl  inputs    */
+  --r-lg:   16px;    /* rounded-2xl cards     */
+  --r-xl:   24px;    /* rounded-3xl modal     */
+  --r-pill: 9999px;  /* rounded-full buttons  */
+
+  /* ---------- Shadow / Glow ---------- */
+  --shadow-card:  0 25px 50px -12px rgba(0, 0, 0, 0.50);
+  --shadow-glow-purple: 0 0 50px -12px rgba(168, 85, 247, 0.10);
+  --shadow-glow-blue:   0 10px 25px -10px rgba(37, 99, 235, 0.20);
+  --shadow-press: inset 0 0 0 1px rgba(255,255,255,0.06);
+
+  /* ---------- Motion ---------- */
+  --ease-out:     cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-snap:    cubic-bezier(0.34, 1.56, 0.64, 1);
+  --press-scale:  0.97;
+  --hover-scale:  1.10;
+  --d-fast:       150ms;
+  --d-base:       300ms;
+  --d-slow:       400ms;
+}
+
+/* =====================  SEMANTIC TYPE  ===================== */
+
+.t-display {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-size: 32px;
+  line-height: 1.05;
+  letter-spacing: var(--track-tight);
+  color: var(--fg-1);
+}
+.t-h1 {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.15;
+  letter-spacing: var(--track-tight);
+  color: var(--fg-1);
+}
+.t-h2 {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: var(--track-tight);
+  color: var(--fg-1);
+}
+.t-h3 {
+  font-family: var(--font-sans);
+  font-weight: 900;          /* font-black — common in Googer */
+  font-size: 13px;
+  letter-spacing: var(--track-tight);
+  color: var(--fg-1);
+}
+.t-body {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg-1);
+}
+.t-body-sm {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+.t-meta {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 10px;
+  color: var(--fg-3);
+  letter-spacing: var(--track-tight);
+}
+/* The signature: tiny, black-weight, uppercase, widely tracked. */
+.t-micro {
+  font-family: var(--font-sans);
+  font-weight: 900;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--track-widest);
+  color: var(--fg-2);
+}
+.t-micro-xs {
+  font-family: var(--font-sans);
+  font-weight: 900;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: var(--track-widest);
+  color: var(--fg-3);
+}
+.t-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-1);
+}
+.t-link {
+  color: var(--accent-soft);
+  text-decoration: none;
+}
+.t-link:hover { color: var(--accent); }

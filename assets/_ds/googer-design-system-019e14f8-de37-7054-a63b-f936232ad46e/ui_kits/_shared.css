@@ -1,0 +1,113 @@
+/* ==============================================
+   Googer UI Kits — shared base (vanilla, no Tailwind)
+   ============================================== */
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;700&display=swap");
+
+:root {
+  --bg-0:#000; --bg-1:#18181b; --bg-2:#121212; --bg-3:#1e1e24;
+  --bg-4:#111114; --bg-5:#162033;
+  --border-1:#27272a; --border-soft:rgba(255,255,255,.10);
+  --border-faint:rgba(255,255,255,.05);
+  --fg-1:#fff; --fg-2:#a1a1aa; --fg-3:#71717a; --fg-4:#52525b;
+  --accent:#a855f7; --accent-soft:#c084fc; --accent-bg:rgba(168,85,247,.10);
+  --accent-border:rgba(168,85,247,.20);
+  --utility:#2563eb; --utility-bright:#3b82f6; --utility-text:#60a5fa;
+  --like:#ef4444; --success:#22c55e; --pink:#ec4899;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg-0); color: var(--fg-1); font-family: 'Geist', system-ui, sans-serif; -webkit-font-smoothing: antialiased; min-height: 100vh; }
+*:not(input):not(textarea):not([contenteditable]) { caret-color: transparent; }
+button { font-family: inherit; cursor: pointer; border: 0; background: transparent; color: inherit; }
+a { color: inherit; text-decoration: none; }
+input, textarea { font-family: inherit; }
+img { display: block; max-width: 100%; }
+
+/* The signature: tiny, black-weight, uppercase, widely tracked */
+.gg-micro { font-weight: 900; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+.gg-micro-xs { font-weight: 900; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; }
+.gg-tight { letter-spacing: -0.02em; }
+
+/* Buttons */
+.gg-btn-primary {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 12px 24px; border-radius: 9999px;
+  background: #fff; color: #000; font-weight: 700; font-size: 13px;
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,.5);
+  transition: transform 150ms, background 150ms;
+}
+.gg-btn-primary:hover { background: #e5e5e5; }
+.gg-btn-primary:active { transform: scale(.97); }
+
+.gg-btn-success {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 12px 24px; border-radius: 9999px;
+  background: var(--success); color: #000; font-weight: 700; font-size: 13px;
+  box-shadow: 0 10px 15px -3px rgba(34,197,94,.3);
+}
+
+.gg-btn-ghost {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: 12px;
+  font-weight: 900; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--fg-2);
+  transition: background 200ms, color 200ms;
+}
+.gg-btn-ghost:hover { background: rgba(255,255,255,.05); color: #fff; }
+.gg-btn-ghost.is-active { background: rgba(255,255,255,.10); color: #fff; box-shadow: 0 4px 6px -1px rgba(255,255,255,.05); }
+
+/* Inputs */
+.gg-input {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid #1f2937;
+  background: var(--bg-2);
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 200ms, box-shadow 200ms;
+}
+.gg-input::placeholder { color: var(--fg-3); }
+.gg-input:focus { border-color: rgba(168,85,247,.5); box-shadow: 0 0 0 1px rgba(168,85,247,.5); }
+
+/* Cards */
+.gg-card {
+  background: var(--bg-3);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,.5);
+}
+.gg-hero-card {
+  background: #000;
+  border: 1px solid var(--accent-border);
+  border-radius: 24px;
+  box-shadow: 0 0 50px -12px rgba(168,85,247,.1);
+}
+
+/* Status pills */
+.gg-pill {
+  display: inline-flex; align-items: center;
+  padding: 6px 14px; border-radius: 9999px;
+  font-weight: 900; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.gg-pill-success { background: rgba(34,197,94,.10); border: 1px solid rgba(34,197,94,.30); color: #86efac; }
+.gg-pill-purple  { background: var(--accent-bg);    border: 1px solid rgba(168,85,247,.30); color: var(--accent-soft); }
+.gg-pill-blue    { background: rgba(37,99,235,.10); border: 1px solid rgba(37,99,235,.30); color: var(--utility-text); }
+.gg-pill-red     { background: rgba(239,68,68,.10); border: 1px solid rgba(239,68,68,.30); color: #fca5a5; }
+.gg-pill-white   { background: rgba(255,255,255,.10); border: 1px solid var(--border-soft); color: #fff; }
+
+/* Scroll */
+.gg-scroll::-webkit-scrollbar { width: 3px; }
+.gg-scroll::-webkit-scrollbar-track { background: transparent; }
+.gg-scroll::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 99px; }
+
+/* Keyframes */
+@keyframes gg-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes gg-slide-in { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes gg-modal-rise { from { transform: translateY(18px) scale(.985); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+@keyframes gg-shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-3px);} 75%{transform:translateX(3px);} }
+
+/* Pixel icon — falls back from ion-icon font.
+   In real product these are Ionicons; here we use a small SVG sprite. */
+.gg-icon { display: inline-flex; width: 1em; height: 1em; vertical-align: -0.15em; }

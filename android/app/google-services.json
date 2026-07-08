@@ -1,0 +1,106 @@
+{
+  "project_info": {
+    "project_number": "965088107395",
+    "project_id": "aquaflow-q4fcn",
+    "storage_bucket": "aquaflow-q4fcn.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:965088107395:android:d1c8063408449f0639f4b6",
+        "android_client_info": {
+          "package_name": "com.nicomart.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "965088107395-1t1924rprhmob1fcvf9aec5omgs6hvjt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nicomart.app",
+            "certificate_hash": "d83dc94eadf87f4e34c34bca4f18b4ba63d15500"
+          }
+        },
+        {
+          "client_id": "965088107395-5hmn2i8gaabt91ak9tjddhpdteme7dib.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nicomart.app",
+            "certificate_hash": "aa8b1a90af85914fd49988cb0b920da0ecfa4a40"
+          }
+        },
+        {
+          "client_id": "965088107395-m1ib3pg8b4vqmc88argsfr1mqdvgh8fr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDacvgiBE4E31TKnTD_k_DoPToT0uNId14"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "965088107395-m1ib3pg8b4vqmc88argsfr1mqdvgh8fr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "965088107395-567l7in87jccgffdasik17vqnod9hdit.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:965088107395:android:ec53f02e0e6896f139f4b6",
+        "android_client_info": {
+          "package_name": "com.nicomart.app.lk"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "965088107395-af3tm43e59lucjoojqqlsd4hpuisjj6b.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nicomart.app.lk",
+            "certificate_hash": "875ef1d2b649c7fdfab32f0a8f3a90e0b19f04c1"
+          }
+        },
+        {
+          "client_id": "965088107395-m1ib3pg8b4vqmc88argsfr1mqdvgh8fr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDacvgiBE4E31TKnTD_k_DoPToT0uNId14"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "965088107395-m1ib3pg8b4vqmc88argsfr1mqdvgh8fr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "965088107395-567l7in87jccgffdasik17vqnod9hdit.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

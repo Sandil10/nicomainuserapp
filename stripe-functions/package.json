@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "firebase-functions": "^6.5.0",
+    "stripe": "^19.1.0"
+  }
+}

@@ -1,0 +1,8 @@
+flutter_native_splash:
+  color: "#4A22A8"  # Purple to match the app splash theme
+  image: assets/splash_logo.png  # Optional 1024x1024 PNG logo (center it)
+  android: true
+  ios: true
+  android_gravity: center  # Position logo
+  ios_content_mode: center
+  fullscreen: false  # Allow status bar if needed

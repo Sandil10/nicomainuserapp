@@ -1,0 +1,189 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function hasRole(data, roleName) {
+      return data != null && (
+        data.user_category == roleName ||
+        data.role == roleName ||
+        (data.roles != null && data.roles[roleName] == true)
+      );
+    }
+
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        hasRole(currentUser().data, 'admin');
+    }
+
+    function isOrderParticipant() {
+      return isSignedIn() && (
+        isAdmin() ||
+        resource.data.userId == request.auth.uid ||
+        resource.data.restaurantId == request.auth.uid ||
+        resource.data.assignedRiderId == request.auth.uid
+      );
+    }
+
+    function isCustomerOrderCreate() {
+      return isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.orderStatus == 'confirmed';
+    }
+
+    function isCustomerOrderCancel() {
+      return isSignedIn() &&
+        resource.data.userId == request.auth.uid &&
+        resource.data.orderStatus in ['confirmed', 'processing', 'received'] &&
+        request.resource.data.orderStatus == 'cancelled';
+    }
+
+    function isRestaurantOrderUpdate() {
+      return isSignedIn() &&
+        resource.data.restaurantId == request.auth.uid &&
+        (
+          (
+            resource.data.orderStatus == 'confirmed' &&
+            request.resource.data.orderStatus in ['preparing', 'cancelled', 'rejected']
+          ) ||
+          (
+            resource.data.orderStatus == 'preparing' &&
+            request.resource.data.orderStatus == 'ready'
+          ) ||
+          (
+            request.resource.data.orderStatus == resource.data.orderStatus
+          )
+        );
+    }
+
+    function isRiderOrderUpdate() {
+      return isSignedIn() &&
+        resource.data.assignedRiderId == request.auth.uid &&
+        (
+          (
+            resource.data.orderStatus == 'finding_rider' &&
+            request.resource.data.orderStatus in ['finding_rider', 'picked_up']
+          ) ||
+          (
+            resource.data.orderStatus == 'picked_up' &&
+            request.resource.data.orderStatus == 'on_the_way'
+          ) ||
+          (
+            resource.data.orderStatus == 'on_the_way' &&
+            request.resource.data.orderStatus == 'delivered'
+          )
+        );
+    }
+
+    match /users/{userId} {
+      allow read: if isSelf(userId) || isAdmin();
+      allow create, update: if isSelf(userId) || isAdmin();
+
+      match /orders/{orderId} {
+        allow read, create, update: if isSelf(userId) || isAdmin();
+      }
+
+      match /notifications/{notificationId} {
+        allow read, update: if isSelf(userId) || isAdmin();
+        allow create: if isSelf(userId) || isAdmin();
+      }
+
+      match /payment_methods/{paymentMethodId} {
+        allow read, write: if isSelf(userId);
+      }
+    }
+
+    match /orders_sl/{orderId} {
+      allow read: if isOrderParticipant();
+      allow create: if isCustomerOrderCreate() || isAdmin();
+      allow update: if isAdmin() || isCustomerOrderCancel() || isRestaurantOrderUpdate() || isRiderOrderUpdate();
+      allow delete: if isAdmin();
+    }
+
+    match /riders/{riderId} {
+      allow read: if isSelf(riderId) || isAdmin();
+      allow create, update: if isSelf(riderId) || isAdmin();
+
+      match /assignments/{assignmentId} {
+        allow read, create, update: if isSelf(riderId) || isAdmin();
+      }
+    }
+
+    match /restaurants/{restaurantId} {
+      allow read: if true;
+      allow write: if isSelf(restaurantId) || isAdmin();
+    }
+
+    match /products_sl/{productId} {
+      allow read: if true;
+      allow create: if isAdmin() || (
+        isSignedIn() &&
+        request.resource.data.restaurantId == request.auth.uid
+      );
+      allow update, delete: if isAdmin() || (
+        isSignedIn() &&
+        resource.data.restaurantId == request.auth.uid
+      );
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create: if isAdmin() || (
+        isSignedIn() &&
+        request.resource.data.restaurantId == request.auth.uid
+      );
+      allow update, delete: if isAdmin() || (
+        isSignedIn() &&
+        resource.data.restaurantId == request.auth.uid
+      );
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /ads/{adId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /ads_sl/{adId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /admin_notifications/{notificationId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /chats_sl/{chatId} {
+      allow read: if isAdmin() || (
+        isSignedIn() &&
+        resource.data.userId == request.auth.uid
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() || (
+        isSignedIn() &&
+        resource.data.userId == request.auth.uid
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

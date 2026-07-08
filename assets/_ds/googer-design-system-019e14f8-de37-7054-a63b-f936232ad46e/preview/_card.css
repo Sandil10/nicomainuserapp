@@ -1,0 +1,38 @@
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;700&display=swap");
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; }
+body.card {
+  font-family: 'Geist', system-ui, sans-serif;
+  background: #000;
+  color: #fff;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+.card-pad { padding: 24px; }
+.chip {
+  font-family:'Geist',sans-serif;
+  font-weight:900;
+  font-size:10px;
+  letter-spacing:0.14em;
+  text-transform:uppercase;
+  padding:6px 10px;
+  border-radius:9999px;
+  display:inline-flex;
+  align-items:center;
+}
+.swatch {
+  border-radius:14px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.08);
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+}
+.swatch-color { height:60px; }
+.swatch-meta {
+  background:#0a0a0a;
+  padding:8px 10px;
+}
+.swatch-name { font-weight:900; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:#fff; }
+.swatch-hex { font-family:'Geist Mono', monospace; font-size:10px; color:#71717a; margin-top:2px; }
+.micro { font-weight:900; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:#a1a1aa; }
