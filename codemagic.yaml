@@ -64,28 +64,36 @@ workflows:
         script: |
           find . -name "Podfile" -execdir pod install \;
 
-      - name: Fetch or create signing files (auto-provision)
+      - name: Set up keychain and signing files (auto-provision)
         script: |
-          # Creates the distribution certificate + App Store provisioning
-          # profile for the bundle id if they don't exist yet, then installs
-          # them on the build machine. Requires the connected App Store Connect
-          # API key to have Admin or App Manager access.
+          # 1. Fresh keychain on the build machine.
+          keychain initialize
+          # 2. Create (if missing) + fetch the distribution cert and App Store
+          #    provisioning profile for this bundle id. Requires the connected
+          #    App Store Connect API key to have Admin or App Manager access.
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create
-          keychain initialize
+          # 3. Install the fetched certificate(s) into the keychain and wire
+          #    the profiles into the Xcode project.
           keychain add-certificates
           xcode-project use-profiles
 
-      - name: Build signed IPA
+      - name: Build pre-signed IPA
         script: |
-          # Use the CI build counter so every TestFlight upload is unique.
-          flutter build ipa --release \
-            --build-number=$PROJECT_BUILD_NUMBER \
-            --export-options-plist=/Users/builder/export_options.plist
+          # Build the Flutter bundle WITHOUT letting Flutter sign it, then let
+          # Codemagic's xcode-project archive + export the IPA using the
+          # profiles installed above. This avoids Flutter looking for a
+          # development certificate it can't find.
+          flutter build ios --release --no-codesign \
+            --build-number=$PROJECT_BUILD_NUMBER
+          xcode-project build-ipa \
+            --workspace ios/Runner.xcworkspace \
+            --scheme Runner
 
     artifacts:
       - build/ios/ipa/*.ipa
+      - "*.ipa"
       - /tmp/xcodebuild_logs/*.log
       - flutter_drive.log
 
