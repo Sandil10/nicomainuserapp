@@ -81,15 +81,17 @@ workflows:
 
       - name: Build pre-signed IPA
         script: |
-          # Build the Flutter bundle WITHOUT letting Flutter sign it, then let
-          # Codemagic's xcode-project archive + export the IPA using the
-          # profiles installed above. This avoids Flutter looking for a
-          # development certificate it can't find.
+          # Build the Flutter bundle WITHOUT letting Flutter sign it.
           flutter build ios --release --no-codesign \
             --build-number=$PROJECT_BUILD_NUMBER
+          # Archive + export using the provisioning profile that
+          # `xcode-project use-profiles` installed. Passing the profile via
+          # the archive flags ensures the Runner target gets a manual profile
+          # (fixes: "Runner requires a provisioning profile").
           xcode-project build-ipa \
             --workspace ios/Runner.xcworkspace \
-            --scheme Runner
+            --scheme Runner \
+            --archive-flags="-allowProvisioningUpdates"
 
     artifacts:
       - build/ios/ipa/*.ipa
