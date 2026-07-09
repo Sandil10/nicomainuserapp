@@ -66,6 +66,7 @@ workflows:
 
       - name: Set up keychain and signing files (auto-provision)
         script: |
+          set -e
           # 1. Fresh keychain on the build machine.
           keychain initialize
           # 2. Create (if missing) + fetch the distribution cert and App Store
@@ -79,6 +80,12 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
 
+          # --- Diagnostics: prove a profile was actually installed ---
+          echo "----- installed provisioning profiles -----"
+          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          ls -la "$PROFILE_DIR" || echo "NO PROFILE DIRECTORY — fetch-signing-files produced nothing (check API key role = App Manager/Admin)."
+          echo "-------------------------------------------"
+
       - name: Build pre-signed IPA
         script: |
           set -e
@@ -86,21 +93,12 @@ workflows:
           flutter build ios --release --no-codesign \
             --build-number=$PROJECT_BUILD_NUMBER
 
-          # Pull the exact provisioning profile name + team id that
-          # `use-profiles` installed, and pass them explicitly to xcodebuild.
-          # This is what actually assigns a profile to the Runner target on
-          # Xcode 26 (the earlier auto-assignment was not sticking).
-          PROFILE_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
-          PROFILE_PATH=$(ls "$PROFILE_HOME"/*.mobileprovision | head -1)
-          PROFILE_PLIST=$(security cms -D -i "$PROFILE_PATH")
-          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$PROFILE_PLIST")
-          TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" /dev/stdin <<< "$PROFILE_PLIST")
-          echo "Using profile: $PROFILE_NAME  team: $TEAM_ID"
-
+          # Let xcode-project export using the profiles use-profiles installed.
+          # It reads them from the standard location and generates matching
+          # export options automatically — no manual path juggling.
           xcode-project build-ipa \
             --workspace ios/Runner.xcworkspace \
-            --scheme Runner \
-            --archive-flags="DEVELOPMENT_TEAM=$TEAM_ID PROVISIONING_PROFILE_SPECIFIER=$PROFILE_NAME CODE_SIGN_STYLE=Manual"
+            --scheme Runner
 
     artifacts:
       - build/ios/ipa/*.ipa
