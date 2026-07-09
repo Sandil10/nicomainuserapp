@@ -70,22 +70,20 @@ workflows:
           # 1. Fresh keychain on the build machine.
           keychain initialize
 
-          # 2. Generate a brand-new private key that WE control. The earlier
-          #    "Cannot save Signing Certificates without certificate private
-          #    key" error happened because a distribution certificate already
-          #    existed in App Store Connect but its private key lived on another
-          #    machine. By passing our own key via --certificate-key,
-          #    fetch-signing-files creates a NEW cert bound to a key we hold.
+          # 2. Generate a private key we control, then create + fetch the
+          #    distribution cert and App Store profile bound to it.
+          #    NOTE: Apple allows only ~2 distribution certificates. If this
+          #    step fails with 409 "You already have a current Distribution
+          #    certificate", revoke old distribution certs at
+          #    https://developer.apple.com/account/resources/certificates/list
+          #    (keep at most one), then re-run the build.
           openssl genrsa -out /tmp/cert_key.pem 2048
-
-          # 3. Create + fetch the distribution cert and App Store provisioning
-          #    profile for this bundle id, using our private key.
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --certificate-key=@file:/tmp/cert_key.pem \
             --create
 
-          # 4. Install the cert (with its private key) into the keychain and
+          # 3. Install the cert (with its private key) into the keychain and
           #    wire the profiles into the Xcode project.
           keychain add-certificates
           xcode-project use-profiles
