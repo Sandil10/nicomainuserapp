@@ -69,21 +69,31 @@ workflows:
           set -e
           # 1. Fresh keychain on the build machine.
           keychain initialize
-          # 2. Create (if missing) + fetch the distribution cert and App Store
-          #    provisioning profile for this bundle id. Requires the connected
-          #    App Store Connect API key to have Admin or App Manager access.
+
+          # 2. Generate a brand-new private key that WE control. The earlier
+          #    "Cannot save Signing Certificates without certificate private
+          #    key" error happened because a distribution certificate already
+          #    existed in App Store Connect but its private key lived on another
+          #    machine. By passing our own key via --certificate-key,
+          #    fetch-signing-files creates a NEW cert bound to a key we hold.
+          openssl genrsa -out /tmp/cert_key.pem 2048
+
+          # 3. Create + fetch the distribution cert and App Store provisioning
+          #    profile for this bundle id, using our private key.
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
+            --certificate-key=@file:/tmp/cert_key.pem \
             --create
-          # 3. Install the fetched certificate(s) into the keychain and wire
-          #    the profiles into the Xcode project.
+
+          # 4. Install the cert (with its private key) into the keychain and
+          #    wire the profiles into the Xcode project.
           keychain add-certificates
           xcode-project use-profiles
 
           # --- Diagnostics: prove a profile was actually installed ---
           echo "----- installed provisioning profiles -----"
-          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
-          ls -la "$PROFILE_DIR" || echo "NO PROFILE DIRECTORY — fetch-signing-files produced nothing (check API key role = App Manager/Admin)."
+          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles" || \
+            echo "NO PROFILE DIRECTORY."
           echo "-------------------------------------------"
 
       - name: Build pre-signed IPA
