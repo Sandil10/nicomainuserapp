@@ -45,5 +45,19 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Nico Mart uses the camera to let you take photos of products, receipts, and your delivery location.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Nico Mart needs access to your photos so you can upload images for your profile, orders, and support requests.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Nico Mart saves images such as order receipts to your photo library when you choose to.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Nico Mart may use the microphone during in-app support or media capture.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Nico Mart uses your location to set your delivery address and track your order on the map.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Nico Mart uses your location to provide accurate delivery and live order tracking, even in the background.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Nico Mart uses your location to provide accurate delivery and live order tracking.</string>
 </dict>
 </plist>
