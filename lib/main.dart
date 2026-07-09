@@ -115,9 +115,10 @@ void main() async {
 
 Future<void> _initializeApp() async {
   try {
-    // Initialize Firebase with options
+    // Initialize Firebase with the correct options for the running platform
+    // (iOS vs Android). Hardcoding one platform crashes the app on the other.
     await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.android,
+      options: DefaultFirebaseOptions.currentPlatform,
     );
 
     print("✅ Firebase initialized successfully");
