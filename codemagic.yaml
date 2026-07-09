@@ -81,17 +81,26 @@ workflows:
 
       - name: Build pre-signed IPA
         script: |
+          set -e
           # Build the Flutter bundle WITHOUT letting Flutter sign it.
           flutter build ios --release --no-codesign \
             --build-number=$PROJECT_BUILD_NUMBER
-          # Archive + export using the provisioning profile that
-          # `xcode-project use-profiles` installed. Passing the profile via
-          # the archive flags ensures the Runner target gets a manual profile
-          # (fixes: "Runner requires a provisioning profile").
+
+          # Pull the exact provisioning profile name + team id that
+          # `use-profiles` installed, and pass them explicitly to xcodebuild.
+          # This is what actually assigns a profile to the Runner target on
+          # Xcode 26 (the earlier auto-assignment was not sticking).
+          PROFILE_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
+          PROFILE_PATH=$(ls "$PROFILE_HOME"/*.mobileprovision | head -1)
+          PROFILE_PLIST=$(security cms -D -i "$PROFILE_PATH")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$PROFILE_PLIST")
+          TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" /dev/stdin <<< "$PROFILE_PLIST")
+          echo "Using profile: $PROFILE_NAME  team: $TEAM_ID"
+
           xcode-project build-ipa \
             --workspace ios/Runner.xcworkspace \
             --scheme Runner \
-            --archive-flags="-allowProvisioningUpdates"
+            --archive-flags="DEVELOPMENT_TEAM=$TEAM_ID PROVISIONING_PROFILE_SPECIFIER=$PROFILE_NAME CODE_SIGN_STYLE=Manual"
 
     artifacts:
       - build/ios/ipa/*.ipa
