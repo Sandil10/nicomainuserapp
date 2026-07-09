@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'user_panel.dart';
 import 'orders_payments.dart';
+import 'help.dart';
 
 class OrderStatusScreen extends StatefulWidget {
   final String orderId;
@@ -648,6 +649,32 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     return lines;
   }
 
+  /// Radar pulse around the restaurant while a rider is being found — ported
+  /// from the Rider Tracking Map design (expanding, fading purple rings), drawn
+  /// as animated map Circles so it lives inside the real map.
+  Set<Circle> _buildCircles() {
+    final circles = <Circle>{};
+    if (_currentStatus != 'finding_rider') return circles;
+
+    final t = _pulseController?.value ?? 0.0;
+    const accent = Color(0xFF4A22A8);
+    // Three staggered rings expanding from ~30m to ~220m.
+    for (var i = 0; i < 3; i++) {
+      final localT = ((t + i / 3) % 1.0);
+      final radius = 30 + localT * 190;
+      final fade = (1 - localT).clamp(0.0, 1.0);
+      circles.add(Circle(
+        circleId: CircleId('radar_$i'),
+        center: _restaurantLatLng,
+        radius: radius,
+        fillColor: accent.withValues(alpha: 0.05 * fade),
+        strokeColor: accent.withValues(alpha: 0.5 * fade),
+        strokeWidth: 2,
+      ));
+    }
+    return circles;
+  }
+
   Map<String, dynamic>? _extractAssignedRider(Map<String, dynamic> data) {
     final assigned = data['assignedRider'];
     if (assigned is Map<String, dynamic>) {
@@ -752,14 +779,19 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
                   // Map View
                   Expanded(
                     flex: 3,
-                    child: GoogleMap(
-                      onMapCreated: (c) => _mapController = c,
-                      initialCameraPosition:
-                          CameraPosition(target: _deliveryLatLng, zoom: 15),
-                      markers: _buildMarkers(),
-                      polylines: _buildPolylines(),
-                      zoomControlsEnabled: false,
-                      myLocationButtonEnabled: false,
+                    child: AnimatedBuilder(
+                      animation: _pulseController ??
+                          const AlwaysStoppedAnimation(0.0),
+                      builder: (context, _) => GoogleMap(
+                        onMapCreated: (c) => _mapController = c,
+                        initialCameraPosition:
+                            CameraPosition(target: _deliveryLatLng, zoom: 15),
+                        markers: _buildMarkers(),
+                        polylines: _buildPolylines(),
+                        circles: _buildCircles(),
+                        zoomControlsEnabled: false,
+                        myLocationButtonEnabled: false,
+                      ),
                     ),
                   ),
 
@@ -985,7 +1017,6 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
             _assignedRider?['fullName'] ??
             'Assigned rider')
         .toString();
-    final riderPhone = (_assignedRider?['phone'] ?? '').toString();
     final vehicle = (_assignedRider?['vehicle'] ??
             _assignedRider?['vehicleNumber'] ??
             _assignedRider?['vehicleType'] ??
@@ -1057,37 +1088,26 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: riderPhone.isEmpty ? null : () {},
-                  icon: const Icon(Icons.call, size: 16),
-                  label: const Text('Call'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF4A22A8),
-                    side: const BorderSide(color: Color(0xFF4A22A8)),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(50)),
-                  ),
-                ),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const HelpPage()),
+                );
+              },
+              icon: const Icon(Icons.message, size: 16),
+              label: const Text('Send a message'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4A22A8),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(50)),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {},
-                  icon: const Icon(Icons.message, size: 16),
-                  label: const Text('Send a message'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A22A8),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(50)),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ],
       ),
@@ -1097,6 +1117,12 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   Widget _buildStatusDescription() {
     String desc = 'Waiting for the restaurant to receive your order.';
     IconData icon = Icons.access_time_filled;
+
+    // While the kitchen is preparing (or the order was just placed), show the
+    // animated veggie/pizza/plate "hop" from the design instead of a static
+    // icon — on the same white background.
+    final showKitchenAnim =
+        _currentStatus == 'preparing' || _currentStatus == 'confirmed';
 
     if (_currentStatus == 'confirmed') {
       desc =
@@ -1125,12 +1151,15 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
 
     return Row(
       children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-              color: Colors.grey.shade100, shape: BoxShape.circle),
-          child: Icon(icon, color: Colors.black87),
-        ),
+        if (showKitchenAnim)
+          const _KitchenPreparingAnimation()
+        else
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: Colors.grey.shade100, shape: BoxShape.circle),
+            child: Icon(icon, color: Colors.black87),
+          ),
         const SizedBox(width: 16),
         Expanded(
           child: Text(
@@ -1195,5 +1224,69 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
         );
       }
     }
+  }
+}
+
+/// "Kitchen is preparing" hop animation, ported from the Rider Tracking Map
+/// design. Three food icons (veggie / pizza / plate) hop in sequence. Sits on
+/// the white background of the status screen (design purple accent kept).
+class _KitchenPreparingAnimation extends StatefulWidget {
+  const _KitchenPreparingAnimation();
+
+  @override
+  State<_KitchenPreparingAnimation> createState() =>
+      _KitchenPreparingAnimationState();
+}
+
+class _KitchenPreparingAnimationState extends State<_KitchenPreparingAnimation>
+    with SingleTickerProviderStateMixin {
+  static const Color _accent = Color(0xFF4A22A8); // app purple
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 56,
+      height: 56,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: _accent.withValues(alpha: 0.08),
+        shape: BoxShape.circle,
+      ),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          Widget hop(IconData icon, double phaseOffset) {
+            final local = ((_controller.value + phaseOffset) % 1.0);
+            final lift = math.sin(local * math.pi) * 6;
+            return Transform.translate(
+              offset: Offset(0, -lift),
+              child: Icon(icon, color: _accent, size: 16),
+            );
+          }
+
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              hop(Icons.eco_outlined, 0.0),
+              const SizedBox(width: 3),
+              hop(Icons.local_pizza_outlined, 0.17),
+              const SizedBox(width: 3),
+              hop(Icons.restaurant_outlined, 0.34),
+            ],
+          );
+        },
+      ),
+    );
   }
 }
