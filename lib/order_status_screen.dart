@@ -173,7 +173,15 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     final img =
         await recorder.endRecording().toImage(size.toInt(), size.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
+    // Render the 118px bitmap at a small logical size (~46px) so the marker is
+    // crisp on high-DPI screens instead of covering the map. imagePixelRatio
+    // maps device pixels -> logical size: 118 / 46 ≈ 2.56.
+    return BitmapDescriptor.bytes(
+      bytes!.buffer.asUint8List(),
+      imagePixelRatio: size / 46.0,
+      width: 46,
+      height: 46,
+    );
   }
 
   // Zoom the camera so the entire route is visible (like Uber's overview).
@@ -855,25 +863,6 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
 
   static const int _totalStages = 4; // 4 segments like the reference
 
-  String get _etaText {
-    switch (_currentStatus) {
-      case 'confirmed':
-        return 'Awaiting restaurant';
-      case 'preparing':
-        return 'Preparing now';
-      case 'ready':
-        return 'Restaurant pickup ready';
-      case 'finding_rider':
-        return 'Finding rider';
-      case 'picked_up':
-        return 'Rider picked up';
-      case 'on_the_way':
-        return 'Live tracking active';
-      default:
-        return 'Live update';
-    }
-  }
-
   Widget _buildStatusHeader() {
     String title = 'Hanging tight...';
     String subtitle = 'Waiting for restaurant to receive your order';
@@ -916,10 +905,6 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
           : 'The restaurant could not accept your order';
     }
 
-    final showEta = _currentStatus != 'delivered' &&
-        _currentStatus != 'cancelled' &&
-        _currentStatus != 'rejected';
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -929,27 +914,11 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF4A22A8))),
         const SizedBox(height: 4),
-        if (showEta)
-          Row(
-            children: [
-              Text('Arriving at ',
-                  style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                      fontWeight: FontWeight.w500)),
-              Text(_etaText,
-                  style: const TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF4A22A8),
-                      fontWeight: FontWeight.bold)),
-            ],
-          )
-        else
-          Text(subtitle,
-              style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.w500)),
+        Text(subtitle,
+            style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500)),
       ],
     );
   }
