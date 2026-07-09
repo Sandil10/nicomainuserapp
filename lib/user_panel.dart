@@ -142,7 +142,9 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
             .toList();
         final sortedCats = visibleCats.isNotEmpty ? visibleCats : cats;
         sortedCats.sort((a, b) {
-          final orderCompare = (a['order'] as int).compareTo(b['order'] as int);
+          final aOrder = (a['order'] as num?)?.toInt() ?? 999;
+          final bOrder = (b['order'] as num?)?.toInt() ?? 999;
+          final orderCompare = aOrder.compareTo(bOrder);
           if (orderCompare != 0) return orderCompare;
 
           final aHasImage =
@@ -152,7 +154,9 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
           final imageCompare = aHasImage.compareTo(bHasImage);
           if (imageCompare != 0) return imageCompare;
 
-          return (a['name'] as String).compareTo(b['name'] as String);
+          final aName = (a['name'] ?? '').toString();
+          final bName = (b['name'] ?? '').toString();
+          return aName.compareTo(bName);
         });
         setState(() {
           _categories = sortedCats;
@@ -761,7 +765,7 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
         separatorBuilder: (_, __) => const SizedBox(width: 18),
         itemBuilder: (context, index) {
           final cat = items[index];
-          final name = cat['name'] as String;
+          final name = (cat['name'] ?? 'Category').toString();
           final selected = _selectedCategory == name;
           return _buildCategoryChip(
             name: name,

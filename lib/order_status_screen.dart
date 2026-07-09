@@ -59,6 +59,21 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   // Shows the delivered success animation overlay before navigating away.
   bool _showDeliveredOverlay = false;
 
+  // --- Demo rider animation (visual only, never written to Firestore) -------
+  // When a rider is assigned but no real GPS feed exists, we animate a demo
+  // rider: ~1km away -> restaurant (pickup) -> user location (delivered),
+  // compressed into ~5 minutes. A real riderLocation feed cancels the demo.
+  static const Duration _demoTotal = Duration(minutes: 5);
+  static const Duration _demoTick = Duration(milliseconds: 120);
+  Timer? _demoTimer;
+  bool _demoRunning = false;
+  double _demoProgress = 0; // 0..1 across the whole leg sequence
+  List<LatLng> _demoLegToRestaurant = [];
+  List<LatLng> _demoLegToCustomer = [];
+  // Local status shown during the demo, overrides the Firestore status label.
+  String? _demoStatus;
+  bool _demoDelivered = false;
+
   @override
   void initState() {
     super.initState();
@@ -75,6 +90,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
 
   @override
   void dispose() {
+    _demoTimer?.cancel();
     _pulseController?.dispose();
     _mapController?.dispose();
     super.dispose();
@@ -345,6 +361,155 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     _usingLiveRiderFeed = false;
   }
 
+  // --- Demo rider animation --------------------------------------------------
+
+  /// Returns a point [distanceMeters] away from [origin] at [bearingDeg].
+  LatLng _offsetPoint(LatLng origin, double distanceMeters, double bearingDeg) {
+    const earthRadius = 6371000.0;
+    final bearing = bearingDeg * math.pi / 180.0;
+    final lat1 = origin.latitude * math.pi / 180.0;
+    final lng1 = origin.longitude * math.pi / 180.0;
+    final angular = distanceMeters / earthRadius;
+
+    final lat2 = math.asin(math.sin(lat1) * math.cos(angular) +
+        math.cos(lat1) * math.sin(angular) * math.cos(bearing));
+    final lng2 = lng1 +
+        math.atan2(
+          math.sin(bearing) * math.sin(angular) * math.cos(lat1),
+          math.cos(angular) - math.sin(lat1) * math.sin(lat2),
+        );
+    return LatLng(lat2 * 180.0 / math.pi, lng2 * 180.0 / math.pi);
+  }
+
+  /// Linear interpolation along a polyline by fraction [t] (0..1).
+  LatLng _pointAlong(List<LatLng> path, double t) {
+    if (path.isEmpty) return _deliveryLatLng;
+    if (path.length == 1 || t <= 0) return path.first;
+    if (t >= 1) return path.last;
+    // Cumulative segment lengths.
+    final segLengths = <double>[];
+    double total = 0;
+    for (var i = 0; i < path.length - 1; i++) {
+      final d = _distanceBetween(path[i], path[i + 1]);
+      segLengths.add(d);
+      total += d;
+    }
+    if (total == 0) return path.first;
+    double target = t * total;
+    for (var i = 0; i < segLengths.length; i++) {
+      if (target <= segLengths[i]) {
+        final f = segLengths[i] == 0 ? 0.0 : target / segLengths[i];
+        return LatLng(
+          path[i].latitude + (path[i + 1].latitude - path[i].latitude) * f,
+          path[i].longitude + (path[i + 1].longitude - path[i].longitude) * f,
+        );
+      }
+      target -= segLengths[i];
+    }
+    return path.last;
+  }
+
+  /// Kicks off the visual-only demo when a rider is assigned but no real GPS
+  /// feed is present. Rider starts ~1km from the restaurant, drives there
+  /// (pickup), then to the customer (delivered) over ~5 minutes.
+  Future<void> _startDemoIfNeeded() async {
+    if (_demoRunning || _demoDelivered || _usingLiveRiderFeed) return;
+    _demoRunning = true;
+    _demoStatus = 'finding_rider';
+
+    // Start point ~1km north-west of the restaurant.
+    final start = _offsetPoint(_restaurantLatLng, 1000, 315);
+
+    // Try real road routes; fall back to straight lines so the demo always runs.
+    List<LatLng> toRestaurant = await _fetchRoute(start, _restaurantLatLng);
+    if (toRestaurant.length < 2) toRestaurant = [start, _restaurantLatLng];
+    List<LatLng> toCustomer =
+        await _fetchRoute(_restaurantLatLng, _deliveryLatLng);
+    if (toCustomer.length < 2) toCustomer = [_restaurantLatLng, _deliveryLatLng];
+
+    if (!mounted || _usingLiveRiderFeed) {
+      _demoRunning = false;
+      return;
+    }
+
+    setState(() {
+      _demoLegToRestaurant = toRestaurant;
+      _demoLegToCustomer = toCustomer;
+      _demoProgress = 0;
+      _riderLatLng = start;
+      _routePoints = toRestaurant;
+    });
+
+    final totalTicks =
+        _demoTotal.inMilliseconds ~/ _demoTick.inMilliseconds;
+    var elapsedTicks = 0;
+
+    _demoTimer?.cancel();
+    _demoTimer = Timer.periodic(_demoTick, (timer) {
+      // A real GPS feed appeared — hand over to live tracking.
+      if (_usingLiveRiderFeed || !mounted) {
+        timer.cancel();
+        _demoRunning = false;
+        return;
+      }
+      elapsedTicks++;
+      _demoProgress = (elapsedTicks / totalTicks).clamp(0.0, 1.0);
+      _advanceDemo(_demoProgress);
+      if (_demoProgress >= 1.0) {
+        timer.cancel();
+      }
+    });
+  }
+
+  /// Advances the demo rider along its two legs by overall progress [p] (0..1).
+  /// First half = drive to restaurant (pickup), second half = drive to customer
+  /// (delivered).
+  void _advanceDemo(double p) {
+    LatLng next;
+    LatLng prev = _riderLatLng ?? _demoLegToRestaurant.first;
+    String status;
+    List<LatLng> activeRoute;
+
+    if (p < 0.5) {
+      // Leg 1: toward restaurant.
+      final legT = p / 0.5;
+      next = _pointAlong(_demoLegToRestaurant, legT);
+      status = 'finding_rider';
+      activeRoute = _demoLegToRestaurant;
+    } else {
+      // Leg 2: restaurant -> customer.
+      final legT = (p - 0.5) / 0.5;
+      next = _pointAlong(_demoLegToCustomer, legT);
+      status = 'on_the_way';
+      activeRoute = _demoLegToCustomer;
+    }
+
+    final bearing = _bearing(prev, next);
+
+    setState(() {
+      _riderLatLng = next;
+      _riderBearing = bearing;
+      _routePoints = activeRoute;
+      _demoStatus = status;
+      _riderTrail.add(next);
+      if (_riderTrail.length > 80) _riderTrail.removeAt(0);
+    });
+
+    if (p >= 1.0 && !_demoDelivered) {
+      _demoDelivered = true;
+      _demoStatus = 'delivered';
+      // Trigger the existing delivered success overlay + navigation.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onDelivered());
+    }
+  }
+
+  void _stopDemo() {
+    _demoTimer?.cancel();
+    _demoTimer = null;
+    _demoRunning = false;
+    _demoStatus = null;
+  }
+
   double _distanceBetween(LatLng a, LatLng b) {
     const earthRadiusMeters = 6371000.0;
     final dLat = (b.latitude - a.latitude) * math.pi / 180.0;
@@ -525,16 +690,32 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
           }
 
           final riderLocation = data['riderLocation'];
+          final hasRider = _assignedRider != null ||
+              (data['assignedRiderId'] ?? '').toString().isNotEmpty;
           if (_liveTrackingStatuses.contains(_currentStatus) &&
               riderLocation is Map) {
+            // Real GPS feed present — cancel any demo and track live.
+            _stopDemo();
             _applyLiveRiderLocation(
               riderLocation.map(
                 (key, value) => MapEntry(key.toString(), value),
               ),
             );
+          } else if (_liveTrackingStatuses.contains(_currentStatus) &&
+              hasRider &&
+              !_usingLiveRiderFeed) {
+            // Rider assigned (e.g. by admin) but no live GPS — run demo.
+            WidgetsBinding.instance
+                .addPostFrameCallback((_) => _startDemoIfNeeded());
           } else if (!_liveTrackingStatuses.contains(_currentStatus) &&
               _currentStatus != 'delivered') {
+            _stopDemo();
             _resetLiveTrackingVisuals();
+          }
+
+          // While the demo drives, its local status overrides the label.
+          if (_demoRunning && _demoStatus != null) {
+            _currentStatus = _demoStatus!;
           }
 
           _canCancel = _currentStatus == 'confirmed' ||
