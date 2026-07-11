@@ -9,8 +9,10 @@ import 'about.dart';
 import 'app_localization.dart';
 import 'ads_banner_widget.dart';
 import 'shop_detail_page.dart';
+import 'location_picker_screen.dart';
 import 'models/restaurant_model.dart';
 import 'order_status_screen.dart';
+import 'services/user_location.dart';
 import 'widgets/app_image.dart';
 
 class UserPanel extends StatefulWidget {
@@ -85,6 +87,11 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
     _subscribeCategories();
     _subscribeRestaurants();
     _subscribeOngoingOrder();
+    // First launch: ask for location permission and detect the user's area;
+    // afterwards this just loads the saved location. The listener keeps the
+    // top-bar city label and service-area gating in sync.
+    UserLocation.current.addListener(_onLocationChanged);
+    UserLocation.init();
 
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 1200),
@@ -257,7 +264,195 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
     _restaurantsSub?.cancel();
     _ordersSub?.cancel();
     _animationController.dispose();
+    UserLocation.current.removeListener(_onLocationChanged);
     super.dispose();
+  }
+
+  void _onLocationChanged() {
+    if (mounted) setState(() {});
+  }
+
+  // ===== Delivery location: top bar + bottom sheet =====
+
+  Widget _buildLocationBar() {
+    final loc = UserLocation.current.value;
+    final label = (loc?.city.isNotEmpty == true)
+        ? loc!.city
+        : (loc != null ? 'Pinned location' : 'Set your location');
+
+    return GestureDetector(
+      onTap: _showLocationSheet,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.location_on, color: primaryPurple, size: 18),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const Icon(Icons.keyboard_arrow_down_rounded,
+              color: Colors.black, size: 20),
+        ],
+      ),
+    );
+  }
+
+  void _showLocationSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        final loc = UserLocation.current.value;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Delivery location',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF4F1FB),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.location_on,
+                          color: primaryPurple, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          loc == null
+                              ? 'No location set yet'
+                              : (loc.address.isNotEmpty
+                                  ? loc.address
+                                  : '${loc.city} (${loc.latitude.toStringAsFixed(4)}, ${loc.longitude.toStringAsFixed(4)})'),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.black87,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (loc != null && UserLocation.outsideServiceArea) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Our restaurants are not available near this location yet.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.red.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(sheetContext);
+                      final ok = await UserLocation.detectCurrentLocation();
+                      if (!ok && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Could not get your location. Please allow location access or set it manually.'),
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.my_location, size: 18),
+                    label: const Text('Use current location'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryPurple,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(sheetContext);
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => LocationPickerScreen(
+                            initialLocation: loc?.latLng,
+                          ),
+                        ),
+                      );
+                      if (result is Map &&
+                          result['location'] != null) {
+                        final picked = result['location'];
+                        await UserLocation.save(
+                          latitude: picked.latitude,
+                          longitude: picked.longitude,
+                          address: (result['address'] ?? '').toString(),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.map_outlined, size: 18),
+                    label: const Text('Choose on map / search address'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primaryPurple,
+                      side: const BorderSide(color: primaryPurple),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _addToCart(Map<String, dynamic> product) {
@@ -655,6 +850,9 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ===== Uber-style delivery location (tap to change) =====
+          _buildLocationBar(),
+          const SizedBox(height: 14),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -932,6 +1130,50 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
         crossAxisSpacing: 16,
         childAspectRatio: 0.82,
         children: List.generate(2, (_) => _popularShimmer()),
+      );
+    }
+
+    // Outside our delivery towns: hide restaurants and explain why.
+    if (UserLocation.outsideServiceArea) {
+      final towns =
+          UserLocation.serviceAreas.map((a) => a.name).join(', ');
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 18),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF4F1FB),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          children: [
+            const Icon(Icons.location_off_outlined,
+                size: 44, color: primaryPurple),
+            const SizedBox(height: 12),
+            const Text(
+              'Our restaurants are not in this location',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'We currently deliver around: $towns.\nChange your delivery location to browse restaurants.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: Colors.grey.shade700, fontSize: 12, height: 1.5),
+            ),
+            const SizedBox(height: 14),
+            TextButton.icon(
+              onPressed: _showLocationSheet,
+              icon: const Icon(Icons.edit_location_alt_outlined, size: 18),
+              label: const Text('Change location'),
+              style: TextButton.styleFrom(foregroundColor: primaryPurple),
+            ),
+          ],
+        ),
       );
     }
 

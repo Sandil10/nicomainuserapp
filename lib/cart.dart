@@ -36,6 +36,12 @@ class _CartState extends State<Cart> with TickerProviderStateMixin {
   bool _isLoadingFee = true;
   StreamSubscription<DocumentSnapshot>? _feeSubscription;
 
+  // Admin-configured percentage charges (settings/appSettings_sl).
+  bool _serviceChargeEnabled = false;
+  double _serviceChargePercent = 0.0;
+  bool _taxEnabled = false;
+  double _taxPercent = 0.0;
+
   static const double _freeDeliveryThreshold = 10.0;
 
   @override
@@ -81,8 +87,15 @@ class _CartState extends State<Cart> with TickerProviderStateMixin {
           if (snapshot.exists && snapshot.data() != null) {
             final data = snapshot.data() as Map<String, dynamic>;
             _baseDeliveryFee = (data['deliveryFee'] as num?)?.toDouble() ?? 0.0;
+            _serviceChargeEnabled = data['serviceChargeEnabled'] == true;
+            _serviceChargePercent =
+                (data['serviceChargePercent'] as num?)?.toDouble() ?? 0.0;
+            _taxEnabled = data['taxEnabled'] == true;
+            _taxPercent = (data['taxPercent'] as num?)?.toDouble() ?? 0.0;
           } else {
             _baseDeliveryFee = 0.0;
+            _serviceChargeEnabled = false;
+            _taxEnabled = false;
           }
           _isLoadingFee = false;
         });
@@ -125,8 +138,21 @@ class _CartState extends State<Cart> with TickerProviderStateMixin {
     return _baseDeliveryFee;
   }
 
+  double _calculateServiceCharge() {
+    if (!_serviceChargeEnabled || _serviceChargePercent <= 0) return 0.0;
+    return _calculateSubtotal() * _serviceChargePercent / 100.0;
+  }
+
+  double _calculateTax() {
+    if (!_taxEnabled || _taxPercent <= 0) return 0.0;
+    return _calculateSubtotal() * _taxPercent / 100.0;
+  }
+
   double _calculateTotal() {
-    return _calculateSubtotal() + _calculateDeliveryFee();
+    return _calculateSubtotal() +
+        _calculateDeliveryFee() +
+        _calculateServiceCharge() +
+        _calculateTax();
   }
 
   void _navigateToCheckout() {
@@ -334,6 +360,49 @@ class _CartState extends State<Cart> with TickerProviderStateMixin {
                     ),
             ],
           ),
+
+          // Service charge / tax rows (admin-configured percentages) —
+          // shown before payment so the customer sees the full breakdown.
+          if (_serviceChargeEnabled && _calculateServiceCharge() > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Service charge (${_serviceChargePercent.toStringAsFixed(_serviceChargePercent % 1 == 0 ? 0 : 1)}%)',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+                Text(
+                  'Rs.${_calculateServiceCharge().toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (_taxEnabled && _calculateTax() > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Tax (${_taxPercent.toStringAsFixed(_taxPercent % 1 == 0 ? 0 : 1)}%)',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+                Text(
+                  'Rs.${_calculateTax().toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+          ],
           const Divider(height: 24, thickness: 1),
 
           // Total Row

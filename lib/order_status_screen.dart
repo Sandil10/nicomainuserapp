@@ -75,6 +75,12 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   String? _demoStatus;
   bool _demoDelivered = false;
 
+  // Throttled (~10fps) driver for the map's radar-pulse Circles while
+  // "finding_rider" is active. Deliberately NOT an AnimatedBuilder wrapping
+  // GoogleMap — see the comment at the GoogleMap widget for why that broke
+  // the map on Android.
+  Timer? _radarPulseTimer;
+
   @override
   void initState() {
     super.initState();
@@ -87,11 +93,16 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
     _loadBikeIcon();
+    _radarPulseTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (!mounted) return;
+      if (_currentStatus == 'finding_rider') setState(() {});
+    });
   }
 
   @override
   void dispose() {
     _demoTimer?.cancel();
+    _radarPulseTimer?.cancel();
     _pulseController?.dispose();
     _mapController?.dispose();
     super.dispose();
@@ -657,9 +668,9 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     return lines;
   }
 
-  /// Radar pulse around the restaurant while a rider is being found — ported
-  /// from the Rider Tracking Map design (expanding, fading purple rings), drawn
-  /// as animated map Circles so it lives inside the real map.
+  /// Radar pulse around the user's delivery location while a rider is being
+  /// found — expanding, fading purple rings drawn as animated map Circles so
+  /// the "finding rider" search visibly radiates from the customer's pin.
   Set<Circle> _buildCircles() {
     final circles = <Circle>{};
     if (_currentStatus != 'finding_rider') return circles;
@@ -673,7 +684,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       final fade = (1 - localT).clamp(0.0, 1.0);
       circles.add(Circle(
         circleId: CircleId('radar_$i'),
-        center: _restaurantLatLng,
+        center: _deliveryLatLng,
         radius: radius,
         fillColor: accent.withValues(alpha: 0.05 * fade),
         strokeColor: accent.withValues(alpha: 0.5 * fade),
@@ -785,21 +796,30 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
               Column(
                 children: [
                   // Map View
+                  //
+                  // IMPORTANT: GoogleMap is a native PlatformView on Android.
+                  // It previously sat inside an AnimatedBuilder that rebuilt
+                  // it on every animation frame (60fps) to drive the radar
+                  // pulse circles — that thrashed the underlying native
+                  // Android MapView badly enough that it never finished
+                  // initializing (blank map on Android only; iOS tolerated
+                  // it, which is why this bug was Android-specific). Fixed by
+                  // giving GoogleMap a stable key and driving the pulse via a
+                  // throttled ~10fps Timer (_radarPulseTimer) that calls the
+                  // screen's own setState, instead of rebuilding this widget
+                  // from an Animation listener.
                   Expanded(
                     flex: 3,
-                    child: AnimatedBuilder(
-                      animation: _pulseController ??
-                          const AlwaysStoppedAnimation(0.0),
-                      builder: (context, _) => GoogleMap(
-                        onMapCreated: (c) => _mapController = c,
-                        initialCameraPosition:
-                            CameraPosition(target: _deliveryLatLng, zoom: 15),
-                        markers: _buildMarkers(),
-                        polylines: _buildPolylines(),
-                        circles: _buildCircles(),
-                        zoomControlsEnabled: false,
-                        myLocationButtonEnabled: false,
-                      ),
+                    child: GoogleMap(
+                      key: const ValueKey('order_status_map'),
+                      onMapCreated: (c) => _mapController = c,
+                      initialCameraPosition:
+                          CameraPosition(target: _deliveryLatLng, zoom: 15),
+                      markers: _buildMarkers(),
+                      polylines: _buildPolylines(),
+                      circles: _buildCircles(),
+                      zoomControlsEnabled: false,
+                      myLocationButtonEnabled: false,
                     ),
                   ),
 

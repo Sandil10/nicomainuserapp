@@ -1029,12 +1029,22 @@ class _ProductListItemState extends State<_ProductListItem> {
   }
 
   void _updateCart(int delta, double price, String uom) {
+    // Apply any admin-set discount so the cart subtotal uses the discounted
+    // unit price (same rules as FoodDetailPage).
+    double unitPrice = price;
+    if (widget.product['discountType'] == 'fixed') {
+      unitPrice = (widget.product['fixedPrice'] as num?)?.toDouble() ?? price;
+    } else if (widget.product['discountType'] == 'normal') {
+      final disc = (widget.product['discount'] as num?)?.toDouble() ?? 0.0;
+      unitPrice = price * (1 - disc / 100);
+    }
+
     final Map<String, dynamic> itemToSend =
         Map<String, dynamic>.from(widget.product);
     itemToSend['quantity'] = delta;
     itemToSend['selectedUnit'] = uom;
-    itemToSend['finalPrice'] = price * delta;
-    itemToSend['unitPrice'] = price;
+    itemToSend['finalPrice'] = unitPrice * delta;
+    itemToSend['unitPrice'] = unitPrice;
 
     widget.onAddToCart(itemToSend);
   }

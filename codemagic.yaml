@@ -34,6 +34,16 @@ workflows:
     integrations:
       app_store_connect: app_store_connect   # <- name of your connected API key
 
+    # Cache slow-to-rebuild artifacts across builds. Cuts the "Build IPA" and
+    # "Install CocoaPods" steps dramatically (native SDKs — Firebase, Stripe,
+    # Google Maps — otherwise recompile from scratch every run).
+    cache:
+      cache_paths:
+        - $HOME/Library/Caches/CocoaPods
+        - $HOME/.pub-cache
+        - $CM_BUILD_DIR/ios/Pods
+        - $HOME/Library/Developer/Xcode/DerivedData
+
     environment:
       groups:
         - firebase            # provides GOOGLE_SERVICE_INFO_PLIST (see step 4)
