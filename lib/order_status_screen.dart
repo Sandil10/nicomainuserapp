@@ -905,21 +905,73 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
           : 'The restaurant could not accept your order';
     }
 
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title,
-            style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF4A22A8))),
-        const SizedBox(height: 4),
-        Text(subtitle,
-            style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w500)),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF4A22A8))),
+              const SizedBox(height: 4),
+              Text(subtitle,
+                  style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+        if (_etaMinutesText != null) ...[
+          const SizedBox(width: 12),
+          _buildEtaPill(_etaMinutesText!),
+        ],
       ],
+    );
+  }
+
+  // Purple "ETA · N MIN" pill, matching the Rider Tracking Map design.
+  String? get _etaMinutesText {
+    switch (_currentStatus) {
+      case 'picked_up':
+        return '9 MIN';
+      case 'on_the_way':
+        return '5 MIN';
+      case 'delivered':
+        return '0 MIN';
+      default:
+        return null;
+    }
+  }
+
+  Widget _buildEtaPill(String eta) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4A22A8).withValues(alpha: 0.10),
+        border: Border.all(color: const Color(0xFF4A22A8).withValues(alpha: 0.20)),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Column(
+        children: [
+          const Text('ETA',
+              style: TextStyle(
+                  color: Color(0xFF8E6AE8),
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.4)),
+          const SizedBox(height: 2),
+          Text(eta,
+              style: const TextStyle(
+                  color: Color(0xFF4A22A8),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800)),
+        ],
+      ),
     );
   }
 
