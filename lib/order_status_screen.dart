@@ -1212,6 +1212,21 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   }
 
   Future<void> _cancelOrder() async {
+    // Guard against attempting a write the Firestore rules will reject —
+    // cancellation is only allowed while the order hasn't been accepted yet.
+    const cancellableStatuses = {'confirmed', 'processing', 'received'};
+    if (!cancellableStatuses.contains(_currentStatus)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'This order can no longer be cancelled — the restaurant has already started preparing it.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1229,7 +1244,9 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       ),
     );
 
-    if (confirmed == true) {
+    if (confirmed != true) return;
+
+    try {
       await FirebaseFirestore.instance
           .collection('orders_sl')
           .doc(widget.orderId)
@@ -1237,13 +1254,19 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
         'orderStatus': 'cancelled',
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      // Optionally navigate back after cancellation
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const UserPanel()),
-          (route) => false,
-        );
-      }
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const UserPanel()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not cancel the order: $e'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     }
   }
 }
