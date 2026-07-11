@@ -342,6 +342,20 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
       'paymentMethod': _selectedPaymentMethod,
     };
 
+    // Remember these details so the next checkout is prefilled end-to-end
+    // (location is already saved separately) and the user can go straight
+    // to Place Order without re-entering anything.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      unawaited(FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'defaultDeliveryDetails': {
+          'phone': '+94${_phoneController.text.trim()}',
+          'notes': _notesController.text.trim(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }
+      }, SetOptions(merge: true)));
+    }
+
     if (_selectedPaymentMethod == 'Cash on Delivery') {
       await _processOrder(deliveryDetails);
     } else {
@@ -450,8 +464,16 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
       'paymentMethod': details['paymentMethod'] ?? 'Cash on Delivery',
       'paymentStatus': 'pending',
       'currency': widget.currency,
-      'subtotal': widget.total - deliveryFee,
+      // Use the real cart subtotal from the checkout metadata; deriving it
+      // as total - deliveryFee breaks once service charge / tax are added.
+      'subtotal': (widget.metadata['subtotal'] as num?)?.toDouble() ??
+          (widget.total - deliveryFee),
       'deliveryFee': deliveryFee,
+      'serviceCharge':
+          (widget.metadata['service_charge'] as num?)?.toDouble() ?? 0.0,
+      'tax': (widget.metadata['tax'] as num?)?.toDouble() ?? 0.0,
+      'storeDiscount':
+          (widget.metadata['store_discount'] as num?)?.toDouble() ?? 0.0,
       'totalAmount': widget.total,
       'orderStatus': 'confirmed',
       'orderItems': cartItems,
@@ -757,8 +779,16 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
   Widget _buildPriceBreakdown() {
     final double deliveryFee =
         widget.metadata['delivery_fee']?.toDouble() ?? 0.0;
-    final double subtotal = widget.total - deliveryFee;
-    const double taxes = 0.0; // Assume 0 or calculate if needed
+    final double serviceCharge =
+        (widget.metadata['service_charge'] as num?)?.toDouble() ?? 0.0;
+    final double taxes = (widget.metadata['tax'] as num?)?.toDouble() ?? 0.0;
+    final double storeDiscount =
+        (widget.metadata['store_discount'] as num?)?.toDouble() ?? 0.0;
+    // Real cart subtotal (already includes product discounts); fall back to
+    // deriving it only for orders placed by older app versions.
+    final double subtotal =
+        (widget.metadata['subtotal'] as num?)?.toDouble() ??
+            (widget.total - deliveryFee - serviceCharge - taxes);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -772,10 +802,20 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
                   color: Colors.black)),
           const SizedBox(height: 12),
           _buildPriceRow('Subtotal', subtotal),
+          if (storeDiscount > 0) ...[
+            const SizedBox(height: 8),
+            _buildPriceRow('Store Discount', -storeDiscount),
+          ],
           const SizedBox(height: 8),
           _buildPriceRow('Delivery Fee', deliveryFee),
-          const SizedBox(height: 8),
-          _buildPriceRow('Taxes and Other Fees', taxes),
+          if (serviceCharge > 0) ...[
+            const SizedBox(height: 8),
+            _buildPriceRow('Service Charge', serviceCharge),
+          ],
+          if (taxes > 0) ...[
+            const SizedBox(height: 8),
+            _buildPriceRow('Tax', taxes),
+          ],
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,

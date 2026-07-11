@@ -272,6 +272,29 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
     if (mounted) setState(() {});
   }
 
+  /// Builds a home section defensively: an unexpected data shape in one
+  /// section (e.g. a malformed category doc) must never blank the whole home
+  /// screen — it renders an inline error card instead.
+  Widget _safeSection(String name, Widget Function() builder) {
+    try {
+      return builder();
+    } catch (e, st) {
+      debugPrint('❌ Home section "$name" failed to build: $e\n$st');
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          'This section could not be displayed.',
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+        ),
+      );
+    }
+  }
+
   // ===== Delivery location: top bar + bottom sheet =====
 
   Widget _buildLocationBar() {
@@ -865,14 +888,19 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
                   letterSpacing: 0,
                 ),
               ),
-              Container(
-                width: 42,
-                height: 42,
-                decoration: const BoxDecoration(
-                  color: softPurple,
-                  shape: BoxShape.circle,
+              GestureDetector(
+                // Profile shortcut: opens the Settings/profile tab.
+                onTap: () => setState(() => _currentIndex = 2),
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: const BoxDecoration(
+                    color: softPurple,
+                    shape: BoxShape.circle,
+                  ),
+                  child:
+                      const Icon(Icons.person, color: primaryPurple, size: 22),
                 ),
-                child: const Icon(Icons.person, color: primaryPurple, size: 22),
               ),
             ],
           ),
@@ -902,9 +930,9 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 18),
           // ===== Real-time Categories =====
-          _buildCategoriesRow(),
+          _safeSection('categories', _buildCategoriesRow),
           // ===== Sub-categories for the selected category =====
-          _buildSubCategoriesRow(),
+          _safeSection('subCategories', _buildSubCategoriesRow),
           const SizedBox(height: 22),
           const Text(
             'Promotions',
@@ -930,7 +958,7 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 12),
           // ===== Real-time Popular restaurants =====
-          _buildPopularGrid(),
+          _safeSection('popular', _buildPopularGrid),
         ],
       ),
     );

@@ -13,11 +13,26 @@ class CheckoutScreen extends StatefulWidget {
   final double subtotal;
   final double deliveryFee;
 
+  // Admin-configured percentage charges, precomputed on the cart subtotal
+  // (0 when disabled) so every later screen shows the same breakdown.
+  final double serviceCharge;
+  final double serviceChargePercent;
+  final double tax;
+  final double taxPercent;
+  final double storeDiscount;
+  final double storeDiscountPercent;
+
   const CheckoutScreen({
     Key? key,
     required this.cartItems,
     required this.subtotal,
     required this.deliveryFee,
+    this.serviceCharge = 0,
+    this.serviceChargePercent = 0,
+    this.tax = 0,
+    this.taxPercent = 0,
+    this.storeDiscount = 0,
+    this.storeDiscountPercent = 0,
   }) : super(key: key);
 
   @override
@@ -99,7 +114,12 @@ class _CheckoutScreenState extends State<CheckoutScreen>
     super.dispose();
   }
 
-  double get _total => widget.subtotal + _deliveryFee;
+  double get _total =>
+      widget.subtotal -
+      widget.storeDiscount +
+      _deliveryFee +
+      widget.serviceCharge +
+      widget.tax;
 
   void _goToDeliveryDetails() async {
     if (_isNavigating) return;
@@ -172,6 +192,12 @@ class _CheckoutScreenState extends State<CheckoutScreen>
       'cart_items': transformedCartItems,
       'subtotal': widget.subtotal,
       'delivery_fee': _deliveryFee,
+      'service_charge': widget.serviceCharge,
+      'service_charge_percent': widget.serviceChargePercent,
+      'tax': widget.tax,
+      'tax_percent': widget.taxPercent,
+      'store_discount': widget.storeDiscount,
+      'store_discount_percent': widget.storeDiscountPercent,
       'latitude': selectedLocation!.latitude,
       'longitude': selectedLocation.longitude,
       'selectedAddress': selectedAddress,
@@ -489,6 +515,41 @@ class _CheckoutScreenState extends State<CheckoutScreen>
               ),
             ],
           ),
+
+          // Store discount / service charge / tax (same amounts as the cart)
+          if (widget.storeDiscount > 0) ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Store discount (${widget.storeDiscountPercent.toStringAsFixed(widget.storeDiscountPercent % 1 == 0 ? 0 : 1)}%)',
+                  style:
+                      TextStyle(color: Colors.green.shade700, fontSize: 13),
+                ),
+                Text(
+                  '-Rs.${widget.storeDiscount.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    color: Colors.green.shade700,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (widget.serviceCharge > 0) ...[
+            const SizedBox(height: 10),
+            _buildSummaryRow(
+                'Service charge (${widget.serviceChargePercent.toStringAsFixed(widget.serviceChargePercent % 1 == 0 ? 0 : 1)}%)',
+                widget.serviceCharge),
+          ],
+          if (widget.tax > 0) ...[
+            const SizedBox(height: 10),
+            _buildSummaryRow(
+                'Tax (${widget.taxPercent.toStringAsFixed(widget.taxPercent % 1 == 0 ? 0 : 1)}%)',
+                widget.tax),
+          ],
 
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 14),

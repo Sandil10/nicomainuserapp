@@ -319,6 +319,12 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                         child: TextField(
                           controller: _searchController,
                           onChanged: _onSearchChanged,
+                          cursorColor: const Color(0xFF4A22A8),
+                          style: const TextStyle(
+                            color: Color(0xFF4A22A8),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
                           decoration: InputDecoration(
                             hintText: AppLocalization.getText('searchAddress'),
                             hintStyle: TextStyle(

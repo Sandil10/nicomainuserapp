@@ -42,6 +42,12 @@ class _CartState extends State<Cart> with TickerProviderStateMixin {
   bool _taxEnabled = false;
   double _taxPercent = 0.0;
 
+  // Per-store overrides from restaurants/{id}: a service charge % that beats
+  // the global one when > 0, and a store-wide discount % on the subtotal.
+  double _storeServiceChargePercent = 0.0;
+  double _storeDiscountPercent = 0.0;
+  String _storeChargesForRestaurantId = '';
+
   static const double _freeDeliveryThreshold = 10.0;
 
   @override
@@ -58,6 +64,36 @@ class _CartState extends State<Cart> with TickerProviderStateMixin {
     _animationController.forward();
     _displayItems = List<Map<String, dynamic>>.from(widget.cartItems);
     _subscribeToDeliveryFee();
+    _loadStoreCharges();
+  }
+
+  /// Carts are single-store; pull that store's service-charge/discount
+  /// overrides so the totals here match what the admin configured per store.
+  Future<void> _loadStoreCharges() async {
+    final restaurantId = _displayItems.isNotEmpty
+        ? (_displayItems.first['restaurantId'] ?? '').toString()
+        : '';
+    if (restaurantId.isEmpty ||
+        restaurantId == _storeChargesForRestaurantId) {
+      return;
+    }
+    _storeChargesForRestaurantId = restaurantId;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(restaurantId)
+          .get();
+      if (!mounted || !doc.exists) return;
+      final data = doc.data()!;
+      setState(() {
+        _storeServiceChargePercent =
+            (data['serviceChargePercent'] as num?)?.toDouble() ?? 0.0;
+        _storeDiscountPercent =
+            (data['discountPercent'] as num?)?.toDouble() ?? 0.0;
+      });
+    } catch (e) {
+      debugPrint('❌ Error loading store charges: $e');
+    }
   }
 
   @override
@@ -138,18 +174,34 @@ class _CartState extends State<Cart> with TickerProviderStateMixin {
     return _baseDeliveryFee;
   }
 
+  /// Store-wide discount amount (admin sets discountPercent per store).
+  double _calculateStoreDiscount() {
+    if (_storeDiscountPercent <= 0) return 0.0;
+    return _calculateSubtotal() * _storeDiscountPercent / 100.0;
+  }
+
+  /// Subtotal after the store discount — the base for percentage charges.
+  double _chargeableBase() => _calculateSubtotal() - _calculateStoreDiscount();
+
+  /// Effective service-charge percent: the store override wins when set.
+  double get _effectiveServiceChargePercent {
+    if (_storeServiceChargePercent > 0) return _storeServiceChargePercent;
+    return _serviceChargeEnabled ? _serviceChargePercent : 0.0;
+  }
+
   double _calculateServiceCharge() {
-    if (!_serviceChargeEnabled || _serviceChargePercent <= 0) return 0.0;
-    return _calculateSubtotal() * _serviceChargePercent / 100.0;
+    final percent = _effectiveServiceChargePercent;
+    if (percent <= 0) return 0.0;
+    return _chargeableBase() * percent / 100.0;
   }
 
   double _calculateTax() {
     if (!_taxEnabled || _taxPercent <= 0) return 0.0;
-    return _calculateSubtotal() * _taxPercent / 100.0;
+    return _chargeableBase() * _taxPercent / 100.0;
   }
 
   double _calculateTotal() {
-    return _calculateSubtotal() +
+    return _chargeableBase() +
         _calculateDeliveryFee() +
         _calculateServiceCharge() +
         _calculateTax();
@@ -183,6 +235,12 @@ class _CartState extends State<Cart> with TickerProviderStateMixin {
           cartItems: _displayItems,
           subtotal: _calculateSubtotal(),
           deliveryFee: _calculateDeliveryFee(),
+          serviceCharge: _calculateServiceCharge(),
+          serviceChargePercent: _effectiveServiceChargePercent,
+          tax: _calculateTax(),
+          taxPercent: _taxEnabled ? _taxPercent : 0,
+          storeDiscount: _calculateStoreDiscount(),
+          storeDiscountPercent: _storeDiscountPercent,
         ),
       ),
     );
@@ -361,15 +419,35 @@ class _CartState extends State<Cart> with TickerProviderStateMixin {
             ],
           ),
 
-          // Service charge / tax rows (admin-configured percentages) —
-          // shown before payment so the customer sees the full breakdown.
-          if (_serviceChargeEnabled && _calculateServiceCharge() > 0) ...[
+          // Store discount / service charge / tax rows — shown before
+          // payment so the customer sees the full breakdown.
+          if (_calculateStoreDiscount() > 0) ...[
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Service charge (${_serviceChargePercent.toStringAsFixed(_serviceChargePercent % 1 == 0 ? 0 : 1)}%)',
+                  'Store discount (${_storeDiscountPercent.toStringAsFixed(_storeDiscountPercent % 1 == 0 ? 0 : 1)}%)',
+                  style: TextStyle(fontSize: 13, color: Colors.green.shade700),
+                ),
+                Text(
+                  '-Rs.${_calculateStoreDiscount().toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (_calculateServiceCharge() > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Service charge (${_effectiveServiceChargePercent.toStringAsFixed(_effectiveServiceChargePercent % 1 == 0 ? 0 : 1)}%)',
                   style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
                 ),
                 Text(

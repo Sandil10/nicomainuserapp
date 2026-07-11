@@ -46,7 +46,6 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   // becomes available in the order payload.
   late LatLng _restaurantLatLng;
   LatLng? _riderLatLng;
-  double _riderBearing = 0; // bike icon rotation (degrees)
   List<LatLng> _routePoints = [];
   final List<LatLng> _riderTrail = [];
   LatLng? _lastRouteOrigin;
@@ -59,6 +58,9 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
 
   // Shows the delivered success animation overlay before navigating away.
   bool _showDeliveredOverlay = false;
+
+  // Tracks whether the camera is parked on the restaurant (pre-rider phases).
+  bool _cameraOnRestaurant = false;
 
   // --- Demo rider animation (visual only, never written to Firestore) -------
   // When a rider is assigned but no real GPS feed exists, we animate a demo
@@ -121,77 +123,65 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     if (mounted) setState(() => _bikeIcon = icon);
   }
 
-  // Paints a glossy black bike badge with a soft shadow so the rider marker
-  // feels closer to a 3D app icon than a flat pin.
+  // Paints a clean delivery-scooter marker (rider with box, like mainstream
+  // delivery apps): the glyph is drawn directly on the map with a white
+  // outline + soft shadow — no dark badge behind it.
   Future<BitmapDescriptor> _drawBikeMarker() async {
-    const size = 118.0;
+    const size = 132.0;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    final center = const Offset(size / 2, size / 2);
-    final badgeRect = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: center, width: 84, height: 84),
-      const Radius.circular(28),
-    );
+    const center = Offset(size / 2, size / 2);
+    const icon = Icons.delivery_dining;
 
-    canvas.drawShadow(
-      Path()..addRRect(badgeRect),
-      Colors.black.withValues(alpha: 0.45),
-      14,
-      true,
-    );
-
-    canvas.drawRRect(
-      badgeRect,
+    // Soft ground shadow so the scooter sits on the map.
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(center.dx, center.dy + 38), width: 56, height: 14),
       Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(center.dx - 28, center.dy - 28),
-          Offset(center.dx + 32, center.dy + 32),
-          const [
-            Color(0xFF4E4E4E),
-            Color(0xFF0B0B0B),
-          ],
-        ),
+        ..color = Colors.black.withValues(alpha: 0.18)
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 6),
     );
 
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(center.dx - 8, center.dy - 14),
-          width: 54,
-          height: 20,
+    TextPainter glyph(Color color, {Paint? foreground}) {
+      final tp = TextPainter(textDirection: TextDirection.ltr);
+      tp.text = TextSpan(
+        text: String.fromCharCode(icon.codePoint),
+        style: TextStyle(
+          fontSize: 92,
+          fontFamily: icon.fontFamily,
+          package: icon.fontPackage,
+          color: foreground == null ? color : null,
+          foreground: foreground,
         ),
-        const Radius.circular(12),
-      ),
-      Paint()..color = Colors.white.withValues(alpha: 0.16),
-    );
+      );
+      tp.layout();
+      return tp;
+    }
 
-    final tp = TextPainter(textDirection: TextDirection.ltr);
-    tp.text = TextSpan(
-      text: String.fromCharCode(Icons.directions_bike.codePoint),
-      style: TextStyle(
-        fontSize: 50,
-        fontFamily: Icons.directions_bike.fontFamily,
-        package: Icons.directions_bike.fontPackage,
-        color: Colors.white,
-      ),
+    // White outline pass (sticker look), then the dark scooter on top.
+    final outline = glyph(
+      Colors.white,
+      foreground: Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 10
+        ..color = Colors.white,
     );
-    tp.layout();
-    tp.paint(
-      canvas,
-      Offset(center.dx - tp.width / 2, center.dy - tp.height / 2 + 2),
-    );
+    outline.paint(
+        canvas, Offset(center.dx - outline.width / 2, center.dy - outline.height / 2));
+
+    final fill = glyph(const Color(0xFF17171B));
+    fill.paint(
+        canvas, Offset(center.dx - fill.width / 2, center.dy - fill.height / 2));
 
     final img =
         await recorder.endRecording().toImage(size.toInt(), size.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    // Render the 118px bitmap at a small logical size (~46px) so the marker is
-    // crisp on high-DPI screens instead of covering the map. imagePixelRatio
-    // maps device pixels -> logical size: 118 / 46 ≈ 2.56.
+    // Small logical size so it never covers the map on high-DPI screens.
     return BitmapDescriptor.bytes(
       bytes!.buffer.asUint8List(),
-      imagePixelRatio: size / 46.0,
-      width: 46,
-      height: 46,
+      imagePixelRatio: size / 44.0,
+      width: 44,
+      height: 44,
     );
   }
 
@@ -299,17 +289,6 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     return points;
   }
 
-  // Bearing (heading) between two points so the bike icon faces forward.
-  double _bearing(LatLng from, LatLng to) {
-    final lat1 = from.latitude * math.pi / 180;
-    final lat2 = to.latitude * math.pi / 180;
-    final dLng = (to.longitude - from.longitude) * math.pi / 180;
-    final y = math.sin(dLng) * math.cos(lat2);
-    final x = math.cos(lat1) * math.sin(lat2) -
-        math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
-    return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
-  }
-
   Future<void> _refreshRouteFromRider(LatLng origin) async {
     if (!_shouldRefreshRoute(origin)) return;
 
@@ -344,12 +323,9 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     if (lat == null || lng == null) return;
 
     final nextPosition = LatLng(lat, lng);
-    final nextBearing = _toDouble(locationData['bearing']) ??
-        (_riderLatLng == null ? 0 : _bearing(_riderLatLng!, nextPosition));
 
     if (_riderLatLng != null &&
         _distanceBetween(_riderLatLng!, nextPosition) < 2) {
-      _riderBearing = nextBearing;
       _usingLiveRiderFeed = true;
       return;
     }
@@ -366,14 +342,12 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     }
 
     _riderLatLng = nextPosition;
-    _riderBearing = nextBearing;
     _usingLiveRiderFeed = true;
     unawaited(_refreshRouteFromRider(nextPosition));
   }
 
   void _resetLiveTrackingVisuals() {
     _riderLatLng = null;
-    _riderBearing = 0;
     _routePoints = [];
     _riderTrail.clear();
     _lastRouteOrigin = null;
@@ -486,7 +460,6 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   /// (delivered).
   void _advanceDemo(double p) {
     LatLng next;
-    LatLng prev = _riderLatLng ?? _demoLegToRestaurant.first;
     String status;
     List<LatLng> activeRoute;
 
@@ -504,11 +477,8 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       activeRoute = _demoLegToCustomer;
     }
 
-    final bearing = _bearing(prev, next);
-
     setState(() {
       _riderLatLng = next;
-      _riderBearing = bearing;
       _routePoints = activeRoute;
       _demoStatus = status;
       _riderTrail.add(next);
@@ -604,34 +574,45 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     );
   }
 
+  /// Statuses before a rider exists: the order is with the restaurant.
+  bool get _isPreRiderPhase => const {
+        'confirmed',
+        'processing',
+        'received',
+        'preparing',
+        'ready',
+      }.contains(_currentStatus);
+
   Set<Marker> _buildMarkers() {
-    final markers = <Marker>{
-      Marker(
-        markerId: const MarkerId('delivery'),
-        position: _deliveryLatLng,
-        infoWindow: const InfoWindow(title: 'Delivery location'),
-      ),
-    };
-    if (!_usingLiveRiderFeed &&
-        (_currentStatus == 'finding_rider' ||
-            _currentStatus == 'on_the_way' ||
-            _currentStatus == 'delivered')) {
+    final markers = <Marker>{};
+
+    if (_isPreRiderPhase) {
+      // Order placed: no red destination pin yet — the map focuses on the
+      // restaurant preparing the order.
       markers.add(Marker(
         markerId: const MarkerId('restaurant'),
         position: _restaurantLatLng,
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
         infoWindow: const InfoWindow(title: 'Restaurant'),
       ));
+      return markers;
     }
+
+    // Delivery phases: red destination pin + the scooter on its way.
+    markers.add(Marker(
+      markerId: const MarkerId('delivery'),
+      position: _deliveryLatLng,
+      infoWindow: const InfoWindow(title: 'Delivery location'),
+    ));
     if (_riderLatLng != null && _currentStatus != 'delivered') {
       markers.add(Marker(
         markerId: const MarkerId('rider'),
         position: _riderLatLng!,
         icon: _bikeIcon ??
             BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
-        rotation: _riderBearing,
+        // Upright sticker-style scooter (no rotation) like mainstream
+        // delivery apps — a rotated glyph reads as a smudge.
         anchor: const Offset(0.5, 0.5),
-        flat: true,
         infoWindow: const InfoWindow(title: 'Rider'),
       ));
     }
@@ -640,29 +621,18 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
 
   Set<Polyline> _buildPolylines() {
     final lines = <Polyline>{};
+    // One clean rounded route line (mainstream delivery-app look) instead of
+    // the old shadow + black route + black trail stack.
     if (_routePoints.length >= 2) {
-      lines.add(Polyline(
-        polylineId: const PolylineId('route_shadow'),
-        points: _routePoints,
-        color: Colors.white.withValues(alpha: 0.9),
-        width: 10,
-        zIndex: 0,
-      ));
       lines.add(Polyline(
         polylineId: const PolylineId('route'),
         points: _routePoints,
-        color: const Color(0xFF111111),
-        width: 6,
+        color: const Color(0xFF4A22A8),
+        width: 5,
+        startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
+        jointType: JointType.round,
         zIndex: 1,
-      ));
-    }
-    if (_riderTrail.length >= 2) {
-      lines.add(Polyline(
-        polylineId: const PolylineId('rider_trail'),
-        points: _riderTrail,
-        color: const Color(0xFF000000),
-        width: 7,
-        zIndex: 2,
       ));
     }
     return lines;
@@ -768,6 +738,18 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
               _currentStatus == 'processing' ||
               _currentStatus == 'received';
 
+          // While the restaurant is preparing (pre-rider), park the camera on
+          // the restaurant; once a rider phase starts the route-fit logic and
+          // rider updates take over the camera.
+          if (_isPreRiderPhase && !_cameraOnRestaurant) {
+            _cameraOnRestaurant = true;
+            _mapController?.animateCamera(
+              CameraUpdate.newLatLngZoom(_restaurantLatLng, 15.5),
+            );
+          } else if (!_isPreRiderPhase) {
+            _cameraOnRestaurant = false;
+          }
+
           if (_currentStatus == 'delivered' &&
               previousStatus != 'delivered' &&
               !_handledDeliveredState) {
@@ -782,10 +764,19 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
             elevation: 0,
             leading: IconButton(
               icon: const Icon(Icons.close, color: Colors.black),
-              onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const UserPanel()),
-                (route) => false,
-              ),
+              // Pop back to the existing home when possible — rebuilding the
+              // whole UserPanel with pushAndRemoveUntil made "back" feel slow.
+              onPressed: () {
+                final nav = Navigator.of(context);
+                if (nav.canPop()) {
+                  nav.pop();
+                } else {
+                  nav.pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const UserPanel()),
+                    (route) => false,
+                  );
+                }
+              },
             ),
             title: const Text('Order Status',
                 style: TextStyle(
@@ -812,7 +803,16 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
                     flex: 3,
                     child: GoogleMap(
                       key: const ValueKey('order_status_map'),
-                      onMapCreated: (c) => _mapController = c,
+                      onMapCreated: (c) {
+                        _mapController = c;
+                        // If the order is still with the restaurant when the
+                        // map appears, start focused on the restaurant.
+                        if (_isPreRiderPhase) {
+                          _cameraOnRestaurant = true;
+                          c.animateCamera(CameraUpdate.newLatLngZoom(
+                              _restaurantLatLng, 15.5));
+                        }
+                      },
                       initialCameraPosition:
                           CameraPosition(target: _deliveryLatLng, zoom: 15),
                       markers: _buildMarkers(),
