@@ -272,6 +272,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
           : Stack(
               children: [
                 GoogleMap(
+                  buildingsEnabled: false,
+                  tiltGesturesEnabled: false,
+                  trafficEnabled: false,
                   initialCameraPosition:
                       CameraPosition(target: _selectedLocation!, zoom: 17),
                   onMapCreated: (controller) {

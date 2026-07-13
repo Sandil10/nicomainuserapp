@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'delivery_details.dart';
 import 'app_localization.dart';
 import 'location_picker_screen.dart';
+import 'services/user_location.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -128,8 +129,18 @@ class _CheckoutScreenState extends State<CheckoutScreen>
     LatLng? selectedLocation;
     String? selectedAddress;
 
+    // 0. The delivery location chosen from the home-page dropdown wins —
+    //    the same saved location is reused for every order.
+    final homeLocation = UserLocation.current.value;
+    if (homeLocation != null) {
+      selectedLocation = homeLocation.latLng;
+      selectedAddress = homeLocation.address.isNotEmpty
+          ? homeLocation.address
+          : homeLocation.city;
+    }
+
     // 1. Try to fetch saved location first to skip map
-    if (user != null) {
+    if (selectedLocation == null && user != null) {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)

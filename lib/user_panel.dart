@@ -905,30 +905,6 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
             ],
           ),
           const SizedBox(height: 18),
-          Container(
-            height: 48,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFEDF4),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (value) =>
-                  setState(() => _searchQuery = value.toLowerCase()),
-              decoration: InputDecoration(
-                hintText: 'Search',
-                hintStyle: TextStyle(
-                  color: Colors.grey.shade500,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-                prefixIcon: Icon(Icons.search, color: Colors.grey.shade500),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
           // ===== Real-time Categories =====
           _safeSection('categories', _buildCategoriesRow),
           // ===== Sub-categories for the selected category =====
@@ -945,7 +921,16 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 12),
           // ===== Real-time Promotions (ads_sl) =====
-          const AdsBannerWidget(height: 130),
+          // Slightly wider than the page padding so the banner pops.
+          LayoutBuilder(
+            builder: (context, constraints) => OverflowBox(
+              maxWidth: constraints.maxWidth + 20,
+              child: SizedBox(
+                width: constraints.maxWidth + 20,
+                child: const AdsBannerWidget(height: 130),
+              ),
+            ),
+          ),
           const SizedBox(height: 20),
           const Text(
             'Popular',
@@ -1156,7 +1141,7 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
         physics: const NeverScrollableScrollPhysics(),
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
-        childAspectRatio: 0.82,
+        childAspectRatio: 0.95,
         children: List.generate(2, (_) => _popularShimmer()),
       );
     }
@@ -1234,7 +1219,7 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
         crossAxisCount: 2,
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
-        childAspectRatio: 0.82,
+        childAspectRatio: 0.95,
       ),
       itemBuilder: (context, index) {
         final r = restaurants[index];

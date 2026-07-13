@@ -47,7 +47,8 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
   bool _isMapLoading = true;
   GoogleMapController? _mapController;
   BitmapDescriptor? _markerIcon;
-  String _selectedPaymentMethod = 'Cash on Delivery';
+  // No default: the user must actively choose how to pay.
+  String? _selectedPaymentMethod;
   List<Map<String, dynamic>> _savedCards = [];
   bool _isLoadingCards = false;
 
@@ -316,6 +317,17 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
         message: AppLocalization.getText('phoneNumberRequired'),
         type: NotificationType.error,
       );
+      return;
+    }
+
+    // The user must actively pick how to pay — auto-open the selector.
+    if (_selectedPaymentMethod == null) {
+      showAppNotification(
+        title: 'Payment method',
+        message: 'Please choose how you want to pay for this order.',
+        type: NotificationType.info,
+      );
+      _showPaymentPopup();
       return;
     }
 
@@ -618,6 +630,11 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
                     duration:
                         const Duration(milliseconds: 600), // Smooth fade-in
                     child: GoogleMap(
+                  buildingsEnabled: false,
+                  tiltGesturesEnabled: false,
+                  mapToolbarEnabled: false,
+                  compassEnabled: false,
+                  trafficEnabled: false,
                       initialCameraPosition:
                           CameraPosition(target: _currentLatLng, zoom: 16),
                       markers: {
@@ -856,17 +873,20 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
   }
 
   Widget _buildPaymentSelector() {
-    IconData paymentIcon = _selectedPaymentMethod == 'Cash on Delivery'
-        ? Icons.money
-        : Icons.credit_card;
+    final method = _selectedPaymentMethod;
+    final IconData paymentIcon = method == null
+        ? Icons.account_balance_wallet_outlined
+        : (method == 'Cash on Delivery' ? Icons.money : Icons.credit_card);
 
     return ListTile(
-      leading: Icon(paymentIcon, color: const Color(0xFF4A22A8)),
-      title: Text(_selectedPaymentMethod,
-          style: const TextStyle(
+      leading: Icon(paymentIcon,
+          color: method == null ? Colors.redAccent : const Color(0xFF4A22A8)),
+      title: Text(method ?? 'Choose a payment method',
+          style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 14,
-              color: Color(0xFF4A22A8))),
+              color:
+                  method == null ? Colors.redAccent : const Color(0xFF4A22A8))),
       subtitle: const Text('Select Payment Method',
           style: TextStyle(fontSize: 11, color: Colors.black54)),
       trailing: const Icon(Icons.chevron_right, color: Color(0xFF4A22A8)),

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'profile_settings.dart';
 import 'legal_settings.dart';
+import 'payment_methods_page.dart';
 import 'orders_payments.dart';
 import 'app_localization.dart';
 import 'app_notification.dart'; // ✅ Import app_notification
@@ -475,6 +476,19 @@ class _SettingsUserState extends State<SettingsUser> {
                               context,
                               MaterialPageRoute(
                                   builder: (context) => LegalSettings())),
+                        ),
+
+                        // Payment Methods (saved cards)
+                        _buildSettingsCard(
+                          title: 'Payment Methods',
+                          subtitle: 'View and remove your saved cards',
+                          icon: Icons.credit_card_outlined,
+                          iconColor: const Color(0xFF0E9F6E),
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) =>
+                                      const PaymentMethodsPage())),
                         ),
 
                         const SizedBox(height: 20),

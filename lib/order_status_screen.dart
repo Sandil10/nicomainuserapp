@@ -80,7 +80,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   // rider: ~1km away -> restaurant (pickup) -> user location (delivered),
   // compressed into ~5 minutes. A real riderLocation feed cancels the demo.
   static const Duration _demoTotal = Duration(minutes: 5);
-  static const Duration _demoTick = Duration(milliseconds: 120);
+  static const Duration _demoTick = Duration(milliseconds: 250);
   Timer? _demoTimer;
   bool _demoRunning = false;
   double _demoProgress = 0; // 0..1 across the whole leg sequence
@@ -108,7 +108,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
     _loadMapIcons();
-    _radarPulseTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+    _radarPulseTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (!mounted) return;
       // Radar rings animate while we're matching a rider (pre-rider phases).
       if (_isPreRiderPhase) setState(() {});
@@ -1053,6 +1053,12 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
                       circles: _buildCircles(),
                       zoomControlsEnabled: false,
                       myLocationButtonEnabled: false,
+                      // Perf: skip expensive layers this screen never uses.
+                      buildingsEnabled: false,
+                      tiltGesturesEnabled: false,
+                      mapToolbarEnabled: false,
+                      compassEnabled: false,
+                      trafficEnabled: false,
                     ),
                   ),
 
