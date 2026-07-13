@@ -53,8 +53,21 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   bool _usingLiveRiderFeed = false;
   bool _navigatedAway = false;
   bool _handledDeliveredState = false;
-  BitmapDescriptor? _bikeIcon;
   Map<String, dynamic>? _assignedRider;
+
+  // ---- "Map UI" design marker set (exact port of map_ui_screen.dart) ------
+  // Black rounded-rect vehicle that follows the route with correct heading,
+  // white pickup-spot dot, black customer pin, white label pills and the
+  // pickup bag — all drawn as bitmaps and placed on the real Google Map.
+  BitmapDescriptor? _vehicleIcon;
+  BitmapDescriptor? _pickupSpotIcon;
+  BitmapDescriptor? _customerPinIcon;
+  BitmapDescriptor? _youPillIcon;
+  BitmapDescriptor? _pickupPillIcon;
+  BitmapDescriptor? _bagIcon;
+  BitmapDescriptor? _milesPillIcon;
+  String _milesPillText = '';
+  double _riderBearing = 0; // vehicle heading (degrees from north)
 
   // Shows the delivered success animation overlay before navigating away.
   bool _showDeliveredOverlay = false;
@@ -94,10 +107,11 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
-    _loadBikeIcon();
+    _loadMapIcons();
     _radarPulseTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
       if (!mounted) return;
-      if (_currentStatus == 'finding_rider') setState(() {});
+      // Radar rings animate while we're matching a rider (pre-rider phases).
+      if (_isPreRiderPhase) setState(() {});
     });
   }
 
@@ -110,79 +124,200 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     super.dispose();
   }
 
-  Future<void> _loadBikeIcon() async {
-    // Draw a black bike/scooter marker in code (no asset needed) so it always
-    // renders and looks like the reference. Falls back to a pin on failure.
-    BitmapDescriptor icon =
-        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet);
-    try {
-      icon = await _drawBikeMarker();
-    } catch (_) {
-      // keep the fallback pin
-    }
-    if (mounted) setState(() => _bikeIcon = icon);
-  }
+  // ---- "Map UI" design bitmaps (exact port of map_ui_screen.dart) ---------
 
-  // Paints a clean delivery-scooter marker (rider with box, like mainstream
-  // delivery apps): the glyph is drawn directly on the map with a white
-  // outline + soft shadow — no dark badge behind it.
-  Future<BitmapDescriptor> _drawBikeMarker() async {
-    const size = 132.0;
+  static const Color _routeBlack = Color(0xFF0A0A0A);
+
+  /// Renders [draw] on a canvas of [w]x[h] physical px shown at [w]/[scale]
+  /// logical px, so all marker art stays crisp and small on high-DPI screens.
+  Future<BitmapDescriptor> _bitmap(
+    double w,
+    double h,
+    void Function(Canvas canvas) draw, {
+    double scale = 3,
+  }) async {
     final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    const center = Offset(size / 2, size / 2);
-    const icon = Icons.delivery_dining;
-
-    // Soft ground shadow so the scooter sits on the map.
-    canvas.drawOval(
-      Rect.fromCenter(
-          center: Offset(center.dx, center.dy + 38), width: 56, height: 14),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.18)
-        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 6),
-    );
-
-    TextPainter glyph(Color color, {Paint? foreground}) {
-      final tp = TextPainter(textDirection: TextDirection.ltr);
-      tp.text = TextSpan(
-        text: String.fromCharCode(icon.codePoint),
-        style: TextStyle(
-          fontSize: 92,
-          fontFamily: icon.fontFamily,
-          package: icon.fontPackage,
-          color: foreground == null ? color : null,
-          foreground: foreground,
-        ),
-      );
-      tp.layout();
-      return tp;
-    }
-
-    // White outline pass (sticker look), then the dark scooter on top.
-    final outline = glyph(
-      Colors.white,
-      foreground: Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 10
-        ..color = Colors.white,
-    );
-    outline.paint(
-        canvas, Offset(center.dx - outline.width / 2, center.dy - outline.height / 2));
-
-    final fill = glyph(const Color(0xFF17171B));
-    fill.paint(
-        canvas, Offset(center.dx - fill.width / 2, center.dy - fill.height / 2));
-
-    final img =
-        await recorder.endRecording().toImage(size.toInt(), size.toInt());
+    final canvas = Canvas(recorder)..scale(scale);
+    draw(canvas);
+    final img = await recorder
+        .endRecording()
+        .toImage((w * scale).round(), (h * scale).round());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    // Small logical size so it never covers the map on high-DPI screens.
     return BitmapDescriptor.bytes(
       bytes!.buffer.asUint8List(),
-      imagePixelRatio: size / 44.0,
-      width: 44,
-      height: 44,
+      imagePixelRatio: scale,
+      width: w,
+      height: h,
     );
+  }
+
+  /// White label pill with soft shadow — the design's `_MapPill`.
+  Future<BitmapDescriptor> _pillBitmap(String label, {bool small = false}) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: TextStyle(
+          color: const Color(0xFF111111),
+          fontSize: small ? 12 : 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final padH = small ? 12.0 : 14.0;
+    final padV = small ? 6.0 : 9.0;
+    final w = tp.width + padH * 2 + 8;
+    final h = tp.height + padV * 2 + 8;
+    return _bitmap(w, h, (canvas) {
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(4, 4, w - 8, h - 8),
+        const Radius.circular(8),
+      );
+      canvas.drawRRect(
+        rect.shift(const Offset(0, 2)),
+        Paint()
+          ..color = Colors.black26
+          ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 4),
+      );
+      canvas.drawRRect(rect, Paint()..color = Colors.white);
+      tp.paint(canvas, Offset(4 + padH, 4 + padV));
+    });
+  }
+
+  Future<void> _loadMapIcons() async {
+    try {
+      // Vehicle: black rounded rect with white border + windshield stripe,
+      // drawn pointing north so marker `rotation` = bearing.
+      final vehicle = await _bitmap(24, 38, (canvas) {
+        final rect = RRect.fromRectAndRadius(
+          const Rect.fromLTWH(4, 4, 16, 30),
+          const Radius.circular(5),
+        );
+        canvas.drawRRect(
+          rect.shift(const Offset(0, 3)),
+          Paint()
+            ..color = Colors.black38
+            ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 5),
+        );
+        canvas.drawRRect(rect, Paint()..color = const Color(0xFF111111));
+        canvas.drawRRect(
+          rect,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5
+            ..color = Colors.white.withValues(alpha: 0.85),
+        );
+        // Windshield stripe near the front (top).
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            const Rect.fromLTWH(6.5, 7, 11, 5),
+            const Radius.circular(2),
+          ),
+          Paint()..color = Colors.white.withValues(alpha: 0.28),
+        );
+      });
+
+      // Pickup spot: white circle with black dot.
+      final pickupSpot = await _bitmap(26, 26, (canvas) {
+        canvas.drawCircle(
+          const Offset(13, 14),
+          9,
+          Paint()
+            ..color = Colors.black26
+            ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 3),
+        );
+        canvas.drawCircle(const Offset(13, 13), 9, Paint()..color = Colors.white);
+        canvas.drawCircle(
+          const Offset(13, 13),
+          9,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1
+            ..color = Colors.black12,
+        );
+        canvas.drawCircle(const Offset(13, 13), 4, Paint()..color = _routeBlack);
+      });
+
+      // Customer: black location pin glyph.
+      final customerPin = await _bitmap(40, 40, (canvas) {
+        final tp = TextPainter(
+          text: TextSpan(
+            text: String.fromCharCode(Icons.location_on.codePoint),
+            style: TextStyle(
+              fontSize: 34,
+              fontFamily: Icons.location_on.fontFamily,
+              color: _routeBlack,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, Offset(20 - tp.width / 2, 40 - tp.height));
+      });
+
+      // Pickup bag: white circle with black shopping bag.
+      final bag = await _bitmap(34, 34, (canvas) {
+        canvas.drawCircle(
+          const Offset(17, 18),
+          15,
+          Paint()
+            ..color = Colors.black26
+            ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 3),
+        );
+        canvas.drawCircle(const Offset(17, 17), 15, Paint()..color = Colors.white);
+        final tp = TextPainter(
+          text: TextSpan(
+            text: String.fromCharCode(Icons.shopping_bag.codePoint),
+            style: TextStyle(
+              fontSize: 15,
+              fontFamily: Icons.shopping_bag.fontFamily,
+              color: _routeBlack,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, Offset(17 - tp.width / 2, 17 - tp.height / 2));
+      });
+
+      final youPill = await _pillBitmap('You', small: true);
+      final pickupPill = await _pillBitmap('Pickup spot');
+
+      if (!mounted) return;
+      setState(() {
+        _vehicleIcon = vehicle;
+        _pickupSpotIcon = pickupSpot;
+        _customerPinIcon = customerPin;
+        _bagIcon = bag;
+        _youPillIcon = youPill;
+        _pickupPillIcon = pickupPill;
+      });
+    } catch (e) {
+      debugPrint('map icon build failed: $e');
+    }
+  }
+
+  /// Rebuilds the miles pill only when its text changes (e.g. "0.4 miles").
+  Future<void> _updateMilesPill(String text) async {
+    if (text == _milesPillText) return;
+    _milesPillText = text;
+    if (text.isEmpty) {
+      if (mounted) setState(() => _milesPillIcon = null);
+      return;
+    }
+    final pill = await _pillBitmap(text);
+    if (mounted && text == _milesPillText) {
+      setState(() => _milesPillIcon = pill);
+    }
+  }
+
+  // Bearing (heading) between two points so the vehicle faces forward.
+  double _bearing(LatLng from, LatLng to) {
+    final lat1 = from.latitude * math.pi / 180;
+    final lat2 = to.latitude * math.pi / 180;
+    final dLng = (to.longitude - from.longitude) * math.pi / 180;
+    final y = math.sin(dLng) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) -
+        math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
+    return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
   }
 
   // Zoom the camera so the entire route is visible (like Uber's overview).
@@ -330,19 +465,26 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       return;
     }
 
-    if (_riderLatLng == null) {
-      _riderTrail
-        ..clear()
-        ..add(nextPosition);
-    } else {
-      _riderTrail.add(nextPosition);
-      if (_riderTrail.length > 80) {
-        _riderTrail.removeAt(0);
-      }
+    // Heading for the vehicle marker: feed-provided bearing when available,
+    // otherwise derived from the movement direction.
+    final feedBearing = _toDouble(locationData['bearing']);
+    if (feedBearing != null) {
+      _riderBearing = feedBearing;
+    } else if (_riderLatLng != null) {
+      _riderBearing = _bearing(_riderLatLng!, nextPosition);
     }
 
     _riderLatLng = nextPosition;
     _usingLiveRiderFeed = true;
+
+    // Miles pill: distance still to drive to the current target.
+    final target = _currentStatus == 'finding_rider'
+        ? _restaurantLatLng
+        : _deliveryLatLng;
+    final miles = _distanceBetween(nextPosition, target) / 1609.34;
+    unawaited(
+        _updateMilesPill('${math.max(0.05, miles).toStringAsFixed(1)} miles'));
+
     unawaited(_refreshRouteFromRider(nextPosition));
   }
 
@@ -353,6 +495,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     _lastRouteOrigin = null;
     _lastRouteFetchAt = null;
     _usingLiveRiderFeed = false;
+    unawaited(_updateMilesPill(''));
   }
 
   // --- Demo rider animation --------------------------------------------------
@@ -373,6 +516,34 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
           math.cos(angular) - math.sin(lat1) * math.sin(lat2),
         );
     return LatLng(lat2 * 180.0 / math.pi, lng2 * 180.0 / math.pi);
+  }
+
+  /// The part of [path] still AHEAD of fraction [t] — the design draws only
+  /// the remaining route in front of the vehicle (Uber style).
+  List<LatLng> _remainingOfPath(List<LatLng> path, double t) {
+    if (path.length < 2 || t <= 0) return path;
+    if (t >= 1) return const [];
+    final segLengths = <double>[];
+    double total = 0;
+    for (var i = 0; i < path.length - 1; i++) {
+      final d = _distanceBetween(path[i], path[i + 1]);
+      segLengths.add(d);
+      total += d;
+    }
+    if (total == 0) return path;
+    double target = t * total;
+    for (var i = 0; i < segLengths.length; i++) {
+      if (target <= segLengths[i]) {
+        final f = segLengths[i] == 0 ? 0.0 : target / segLengths[i];
+        final current = LatLng(
+          path[i].latitude + (path[i + 1].latitude - path[i].latitude) * f,
+          path[i].longitude + (path[i + 1].longitude - path[i].longitude) * f,
+        );
+        return [current, ...path.sublist(i + 1)];
+      }
+      target -= segLengths[i];
+    }
+    return const [];
   }
 
   /// Linear interpolation along a polyline by fraction [t] (0..1).
@@ -461,33 +632,45 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   void _advanceDemo(double p) {
     LatLng next;
     String status;
-    List<LatLng> activeRoute;
+    List<LatLng> remaining;
+    LatLng target;
 
     if (p < 0.5) {
       // Leg 1: toward restaurant.
       final legT = p / 0.5;
       next = _pointAlong(_demoLegToRestaurant, legT);
       status = 'finding_rider';
-      activeRoute = _demoLegToRestaurant;
+      remaining = _remainingOfPath(_demoLegToRestaurant, legT);
+      target = _restaurantLatLng;
     } else {
       // Leg 2: restaurant -> customer.
       final legT = (p - 0.5) / 0.5;
       next = _pointAlong(_demoLegToCustomer, legT);
       status = 'on_the_way';
-      activeRoute = _demoLegToCustomer;
+      remaining = _remainingOfPath(_demoLegToCustomer, legT);
+      target = _deliveryLatLng;
     }
 
+    final prev = _riderLatLng;
     setState(() {
+      if (prev != null && _distanceBetween(prev, next) > 1) {
+        _riderBearing = _bearing(prev, next);
+      }
       _riderLatLng = next;
-      _routePoints = activeRoute;
+      // Only the remaining path ahead of the vehicle is drawn (design rule).
+      _routePoints = remaining;
       _demoStatus = status;
-      _riderTrail.add(next);
-      if (_riderTrail.length > 80) _riderTrail.removeAt(0);
     });
+
+    // Miles pill next to the pickup spot (design: distance still to drive).
+    final miles = _distanceBetween(next, target) / 1609.34;
+    unawaited(
+        _updateMilesPill('${math.max(0.05, miles).toStringAsFixed(1)} miles'));
 
     if (p >= 1.0 && !_demoDelivered) {
       _demoDelivered = true;
       _demoStatus = 'delivered';
+      unawaited(_updateMilesPill(''));
       // Trigger the existing delivered success overlay + navigation.
       WidgetsBinding.instance.addPostFrameCallback((_) => _onDelivered());
     }
@@ -583,37 +766,87 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
         'ready',
       }.contains(_currentStatus);
 
+  // Marker layer — exact port of the "Map UI" design onto the real map:
+  // pickup spot (white circle + black dot) with "Pickup spot" + miles pills,
+  // customer black pin with "You" pill, bag at pickup, and the black
+  // rounded-rect vehicle rotated to its heading.
   Set<Marker> _buildMarkers() {
     final markers = <Marker>{};
 
-    if (_isPreRiderPhase) {
-      // Order placed: no red destination pin yet — the map focuses on the
-      // restaurant preparing the order.
+    // Pickup spot + label (always visible, like the design).
+    markers.add(Marker(
+      markerId: const MarkerId('pickup_spot'),
+      position: _restaurantLatLng,
+      icon: _pickupSpotIcon ??
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+      anchor: const Offset(0.5, 0.5),
+      zIndexInt: 3,
+    ));
+    if (_pickupPillIcon != null) {
       markers.add(Marker(
-        markerId: const MarkerId('restaurant'),
+        markerId: const MarkerId('pickup_pill'),
         position: _restaurantLatLng,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-        infoWindow: const InfoWindow(title: 'Restaurant'),
+        icon: _pickupPillIcon!,
+        // Right edge of the pill sits left of the spot (design dx: -76).
+        anchor: const Offset(1.15, 0.5),
+        zIndexInt: 2,
       ));
-      return markers;
+    }
+    if (_milesPillIcon != null && _milesPillText.isNotEmpty) {
+      markers.add(Marker(
+        markerId: const MarkerId('miles_pill'),
+        position: _restaurantLatLng,
+        icon: _milesPillIcon!,
+        // Left edge of the pill sits right of the spot (design dx: 66).
+        anchor: const Offset(-0.15, 0.5),
+        zIndexInt: 2,
+      ));
     }
 
-    // Delivery phases: red destination pin + the scooter on its way.
+    // Customer pin + "You" pill (always visible, like the design).
     markers.add(Marker(
-      markerId: const MarkerId('delivery'),
+      markerId: const MarkerId('customer_pin'),
       position: _deliveryLatLng,
-      infoWindow: const InfoWindow(title: 'Delivery location'),
+      icon: _customerPinIcon ?? BitmapDescriptor.defaultMarker,
+      anchor: const Offset(0.5, 1.0),
+      zIndexInt: 3,
     ));
-    if (_riderLatLng != null && _currentStatus != 'delivered') {
+    if (_youPillIcon != null) {
+      markers.add(Marker(
+        markerId: const MarkerId('you_pill'),
+        position: _deliveryLatLng,
+        icon: _youPillIcon!,
+        // Pill floats just below the pin point (design dy: +18).
+        anchor: const Offset(0.5, -0.35),
+        zIndexInt: 2,
+      ));
+    }
+
+    // Bag at the restaurant while the rider collects the order.
+    if (_currentStatus == 'picked_up' && _bagIcon != null) {
+      markers.add(Marker(
+        markerId: const MarkerId('pickup_bag'),
+        position: _restaurantLatLng,
+        icon: _bagIcon!,
+        // Floats above the pickup spot (design dy: -34).
+        anchor: const Offset(0.5, 2.1),
+        zIndexInt: 4,
+      ));
+    }
+
+    // Vehicle following the route with correct heading.
+    if (_riderLatLng != null &&
+        !_isPreRiderPhase &&
+        _currentStatus != 'delivered') {
       markers.add(Marker(
         markerId: const MarkerId('rider'),
         position: _riderLatLng!,
-        icon: _bikeIcon ??
+        icon: _vehicleIcon ??
             BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
-        // Upright sticker-style scooter (no rotation) like mainstream
-        // delivery apps — a rotated glyph reads as a smudge.
+        rotation: _riderBearing,
+        flat: true,
         anchor: const Offset(0.5, 0.5),
-        infoWindow: const InfoWindow(title: 'Rider'),
+        zIndexInt: 5,
       ));
     }
     return markers;
@@ -621,14 +854,15 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
 
   Set<Polyline> _buildPolylines() {
     final lines = <Polyline>{};
-    // One clean rounded route line (mainstream delivery-app look) instead of
-    // the old shadow + black route + black trail stack.
-    if (_routePoints.length >= 2) {
+    // Solid BLACK route, and only the REMAINING path ahead of the rider is
+    // drawn (Uber style) — the demo/live update keeps _routePoints trimmed
+    // to the part that is still ahead.
+    if (_routePoints.length >= 2 && !_isPreRiderPhase) {
       lines.add(Polyline(
         polylineId: const PolylineId('route'),
         points: _routePoints,
-        color: const Color(0xFF4A22A8),
-        width: 5,
+        color: _routeBlack,
+        width: 6,
         startCap: Cap.roundCap,
         endCap: Cap.roundCap,
         jointType: JointType.round,
@@ -638,15 +872,14 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     return lines;
   }
 
-  /// Radar pulse around the user's delivery location while a rider is being
-  /// found — expanding, fading purple rings drawn as animated map Circles so
-  /// the "finding rider" search visibly radiates from the customer's pin.
+  /// Radar rings around the restaurant while we're matching a rider — the
+  /// design's `_RadarRings`, drawn as expanding, fading map Circles.
   Set<Circle> _buildCircles() {
     final circles = <Circle>{};
-    if (_currentStatus != 'finding_rider') return circles;
+    if (!_isPreRiderPhase) return circles;
 
     final t = _pulseController?.value ?? 0.0;
-    const accent = Color(0xFF4A22A8);
+    const accent = Color(0xFFA855F7);
     // Three staggered rings expanding from ~30m to ~220m.
     for (var i = 0; i < 3; i++) {
       final localT = ((t + i / 3) % 1.0);
@@ -654,7 +887,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       final fade = (1 - localT).clamp(0.0, 1.0);
       circles.add(Circle(
         circleId: CircleId('radar_$i'),
-        center: _deliveryLatLng,
+        center: _restaurantLatLng,
         radius: radius,
         fillColor: accent.withValues(alpha: 0.05 * fade),
         strokeColor: accent.withValues(alpha: 0.5 * fade),
