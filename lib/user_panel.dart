@@ -448,8 +448,7 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
                           ),
                         ),
                       );
-                      if (result is Map &&
-                          result['location'] != null) {
+                      if (result is Map && result['location'] != null) {
                         final picked = result['location'];
                         await UserLocation.save(
                           latitude: picked.latitude,
@@ -904,11 +903,6 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          // ===== Real-time Categories =====
-          _safeSection('categories', _buildCategoriesRow),
-          // ===== Sub-categories for the selected category =====
-          _safeSection('subCategories', _buildSubCategoriesRow),
           const SizedBox(height: 22),
           const Text(
             'Promotions',
@@ -922,12 +916,18 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
           const SizedBox(height: 12),
           // ===== Real-time Promotions (ads_sl) =====
           // Slightly wider than the page padding so the banner pops.
-          LayoutBuilder(
-            builder: (context, constraints) => OverflowBox(
-              maxWidth: constraints.maxWidth + 20,
-              child: SizedBox(
-                width: constraints.maxWidth + 20,
-                child: const AdsBannerWidget(height: 130),
+          SizedBox(
+            height: 130,
+            child: LayoutBuilder(
+              builder: (context, constraints) => OverflowBox(
+                maxWidth: constraints.maxWidth + 20,
+                minHeight: 130,
+                maxHeight: 130,
+                child: SizedBox(
+                  width: constraints.maxWidth + 20,
+                  height: 130,
+                  child: const AdsBannerWidget(height: 130),
+                ),
               ),
             ),
           ),
@@ -1148,8 +1148,7 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
 
     // Outside our delivery towns: hide restaurants and explain why.
     if (UserLocation.outsideServiceArea) {
-      final towns =
-          UserLocation.serviceAreas.map((a) => a.name).join(', ');
+      final towns = UserLocation.serviceAreas.map((a) => a.name).join(', ');
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 18),

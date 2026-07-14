@@ -44,6 +44,7 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
   String _currentAddress = '';
   bool _isProcessing = false;
   bool _isLoading = false;
+  bool _loadingOverlayVisible = false;
   bool _isMapLoading = true;
   GoogleMapController? _mapController;
   BitmapDescriptor? _markerIcon;
@@ -403,11 +404,14 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
 
       if (mounted) {
         _hideLoadingOverlay();
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => OrderStatusScreen(orderId: orderId),
-          ),
-        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => OrderStatusScreen(orderId: orderId),
+            ),
+          );
+        });
       }
     } catch (e) {
       _hideLoadingOverlay();
@@ -422,6 +426,50 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
   }
 
   // Helper methods borrowed/adapted from original code
+
+  double? _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return null;
+  }
+
+  Map<String, double>? _extractRestaurantLocation(Map<String, dynamic> data) {
+    final location = data['location'];
+    final lat = _asDouble(data['latitude']) ??
+        (location is Map
+            ? _asDouble(location['latitude'] ?? location['lat'])
+            : location is GeoPoint
+                ? location.latitude
+                : null);
+    final lng = _asDouble(data['longitude']) ??
+        (location is Map
+            ? _asDouble(location['longitude'] ?? location['lng'])
+            : location is GeoPoint
+                ? location.longitude
+                : null);
+
+    if (lat == null || lng == null) return null;
+    return {
+      'latitude': lat,
+      'longitude': lng,
+    };
+  }
+
+  Future<Map<String, double>?> _loadRestaurantLocation(
+      String restaurantId) async {
+    if (restaurantId.isEmpty) return null;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(restaurantId)
+          .get();
+      final data = snap.data();
+      if (data == null) return null;
+      return _extractRestaurantLocation(data);
+    } catch (e) {
+      debugPrint('Could not load restaurant location: $e');
+      return null;
+    }
+  }
 
   Future<String> _createOrderInFirestore(Map<String, dynamic> details) async {
     final user = FirebaseAuth.instance.currentUser;
@@ -453,11 +501,14 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
           .toString();
     }
 
+    final restaurantLocation = await _loadRestaurantLocation(restaurantId);
+
     final orderData = {
       'orderId': orderId,
       'userId': user.uid,
       'restaurantId': restaurantId,
       'restaurantName': restaurantName,
+      if (restaurantLocation != null) 'restaurantLocation': restaurantLocation,
       'orderDate': now,
       'createdAt': now,
       'updatedAt': now,
@@ -523,6 +574,7 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
   }
 
   void _showLoadingOverlay() {
+    _loadingOverlayVisible = true;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -532,7 +584,12 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
   }
 
   void _hideLoadingOverlay() {
-    if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    if (!mounted || !_loadingOverlayVisible) return;
+    _loadingOverlayVisible = false;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
   }
 
   void _showSuccessPopup(String orderId) {
@@ -630,11 +687,11 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
                     duration:
                         const Duration(milliseconds: 600), // Smooth fade-in
                     child: GoogleMap(
-                  buildingsEnabled: false,
-                  tiltGesturesEnabled: false,
-                  mapToolbarEnabled: false,
-                  compassEnabled: false,
-                  trafficEnabled: false,
+                      buildingsEnabled: false,
+                      tiltGesturesEnabled: false,
+                      mapToolbarEnabled: false,
+                      compassEnabled: false,
+                      trafficEnabled: false,
                       initialCameraPosition:
                           CameraPosition(target: _currentLatLng, zoom: 16),
                       markers: {
@@ -803,9 +860,8 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
         (widget.metadata['store_discount'] as num?)?.toDouble() ?? 0.0;
     // Real cart subtotal (already includes product discounts); fall back to
     // deriving it only for orders placed by older app versions.
-    final double subtotal =
-        (widget.metadata['subtotal'] as num?)?.toDouble() ??
-            (widget.total - deliveryFee - serviceCharge - taxes);
+    final double subtotal = (widget.metadata['subtotal'] as num?)?.toDouble() ??
+        (widget.total - deliveryFee - serviceCharge - taxes);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),

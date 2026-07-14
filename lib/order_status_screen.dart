@@ -54,6 +54,14 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   bool _navigatedAway = false;
   bool _handledDeliveredState = false;
   Map<String, dynamic>? _assignedRider;
+  String _restaurantName = 'Restaurant';
+  DateTime? _orderCreatedAt;
+  String? _restaurantLocationLookupId;
+  bool _usingLocalDemoFlow = false;
+  DateTime? _lastCameraFollowAt;
+  bool _cameraAnimatingProgrammatically = false;
+  bool _userControllingMap = false;
+  Timer? _userMapResumeTimer;
 
   // ---- "Map UI" design marker set (exact port of map_ui_screen.dart) ------
   // Black rounded-rect vehicle that follows the route with correct heading,
@@ -79,9 +87,12 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   // When a rider is assigned but no real GPS feed exists, we animate a demo
   // rider: ~1km away -> restaurant (pickup) -> user location (delivered),
   // compressed into ~5 minutes. A real riderLocation feed cancels the demo.
-  static const Duration _demoTotal = Duration(minutes: 5);
-  static const Duration _demoTick = Duration(milliseconds: 250);
+  static const Duration _demoTotal = Duration(seconds: 45);
+  static const Duration _demoTick = Duration(milliseconds: 700);
+  static const Duration _placedHold = Duration(seconds: 5);
+  static const Duration _preparingHold = Duration(seconds: 5);
   Timer? _demoTimer;
+  Timer? _statusRefreshTimer;
   bool _demoRunning = false;
   double _demoProgress = 0; // 0..1 across the whole leg sequence
   List<LatLng> _demoLegToRestaurant = [];
@@ -108,16 +119,25 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
     _loadMapIcons();
-    _radarPulseTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+    _radarPulseTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
       if (!mounted) return;
       // Radar rings animate while we're matching a rider (pre-rider phases).
       if (_isPreRiderPhase) setState(() {});
+    });
+    _statusRefreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || _orderCreatedAt == null) return;
+      if (_currentStatus == 'confirmed' ||
+          (_usingLocalDemoFlow && !_demoRunning)) {
+        setState(() {});
+      }
     });
   }
 
   @override
   void dispose() {
     _demoTimer?.cancel();
+    _userMapResumeTimer?.cancel();
+    _statusRefreshTimer?.cancel();
     _radarPulseTimer?.cancel();
     _pulseController?.dispose();
     _mapController?.dispose();
@@ -158,14 +178,14 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
         text: label,
         style: TextStyle(
           color: const Color(0xFF111111),
-          fontSize: small ? 12 : 13,
+          fontSize: small ? 10.5 : 11.5,
           fontWeight: FontWeight.w600,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    final padH = small ? 12.0 : 14.0;
-    final padV = small ? 6.0 : 9.0;
+    final padH = small ? 9.0 : 11.0;
+    final padV = small ? 5.0 : 7.0;
     final w = tp.width + padH * 2 + 8;
     final h = tp.height + padV * 2 + 8;
     return _bitmap(w, h, (canvas) {
@@ -186,18 +206,14 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
 
   Future<void> _loadMapIcons() async {
     try {
-      // Vehicle: black rounded rect with white border + windshield stripe,
-      // drawn pointing north so marker `rotation` = bearing.
-      final vehicle = await _bitmap(24, 38, (canvas) {
+      // Vehicle: small black rounded rect with white border + windshield
+      // stripe — exact port of map_ui_screen.dart's rider marker. Drawn
+      // pointing north (up) so marker `rotation` = bearing rotates it
+      // correctly toward the pickup spot / customer.
+      final vehicle = await _bitmap(16, 30, (canvas) {
         final rect = RRect.fromRectAndRadius(
-          const Rect.fromLTWH(4, 4, 16, 30),
+          const Rect.fromLTWH(0, 0, 16, 30),
           const Radius.circular(5),
-        );
-        canvas.drawRRect(
-          rect.shift(const Offset(0, 3)),
-          Paint()
-            ..color = Colors.black38
-            ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 5),
         );
         canvas.drawRRect(rect, Paint()..color = const Color(0xFF111111));
         canvas.drawRRect(
@@ -210,76 +226,114 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
         // Windshield stripe near the front (top).
         canvas.drawRRect(
           RRect.fromRectAndRadius(
-            const Rect.fromLTWH(6.5, 7, 11, 5),
+            const Rect.fromLTWH(2.5, 3, 11, 5),
             const Radius.circular(2),
           ),
           Paint()..color = Colors.white.withValues(alpha: 0.28),
         );
       });
 
-      // Pickup spot: white circle with black dot.
-      final pickupSpot = await _bitmap(26, 26, (canvas) {
+      // Restaurant pickup marker: small dimensional restaurant icon.
+      final pickupSpot = await _bitmap(28, 28, (canvas) {
         canvas.drawCircle(
-          const Offset(13, 14),
-          9,
+          const Offset(14, 15),
+          11.5,
           Paint()
             ..color = Colors.black26
-            ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 3),
+            ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 4),
         );
-        canvas.drawCircle(const Offset(13, 13), 9, Paint()..color = Colors.white);
         canvas.drawCircle(
-          const Offset(13, 13),
-          9,
+            const Offset(14, 13), 11.5, Paint()..color = Colors.white);
+        canvas.drawCircle(
+          const Offset(14, 13),
+          8.4,
+          Paint()..color = const Color(0xFFFFF0DC),
+        );
+        final tp = TextPainter(
+          text: TextSpan(
+            text: String.fromCharCode(Icons.restaurant_rounded.codePoint),
+            style: TextStyle(
+              fontSize: 13,
+              fontFamily: Icons.restaurant_rounded.fontFamily,
+              color: const Color(0xFFD46A00),
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, Offset(14 - tp.width / 2, 13 - tp.height / 2));
+        canvas.drawCircle(
+          const Offset(14, 13),
+          11.5,
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1
-            ..color = Colors.black12,
+            ..color = const Color(0xFFFFB25A),
         );
-        canvas.drawCircle(const Offset(13, 13), 4, Paint()..color = _routeBlack);
       });
 
-      // Customer: black location pin glyph.
-      final customerPin = await _bitmap(40, 40, (canvas) {
+      // Customer destination: explicit black destination pin, not a default dot.
+      final customerPin = await _bitmap(34, 34, (canvas) {
+        canvas.drawCircle(
+          const Offset(17, 18),
+          12.5,
+          Paint()
+            ..color = Colors.black26
+            ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 4),
+        );
+        canvas.drawCircle(
+          const Offset(17, 16),
+          12.5,
+          Paint()..color = Colors.white,
+        );
+        canvas.drawCircle(
+          const Offset(17, 16),
+          12.5,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2
+            ..color = _routeBlack,
+        );
         final tp = TextPainter(
           text: TextSpan(
-            text: String.fromCharCode(Icons.location_on.codePoint),
+            text: String.fromCharCode(Icons.flag_rounded.codePoint),
             style: TextStyle(
-              fontSize: 34,
-              fontFamily: Icons.location_on.fontFamily,
+              fontSize: 18,
+              fontFamily: Icons.flag_rounded.fontFamily,
               color: _routeBlack,
             ),
           ),
           textDirection: TextDirection.ltr,
         )..layout();
-        tp.paint(canvas, Offset(20 - tp.width / 2, 40 - tp.height));
+        tp.paint(canvas, Offset(17 - tp.width / 2, 16 - tp.height / 2));
       });
 
       // Pickup bag: white circle with black shopping bag.
-      final bag = await _bitmap(34, 34, (canvas) {
+      final bag = await _bitmap(26, 26, (canvas) {
         canvas.drawCircle(
-          const Offset(17, 18),
-          15,
+          const Offset(13, 14),
+          11,
           Paint()
             ..color = Colors.black26
             ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 3),
         );
-        canvas.drawCircle(const Offset(17, 17), 15, Paint()..color = Colors.white);
+        canvas.drawCircle(
+            const Offset(13, 13), 11, Paint()..color = Colors.white);
         final tp = TextPainter(
           text: TextSpan(
             text: String.fromCharCode(Icons.shopping_bag.codePoint),
             style: TextStyle(
-              fontSize: 15,
+              fontSize: 11,
               fontFamily: Icons.shopping_bag.fontFamily,
               color: _routeBlack,
             ),
           ),
           textDirection: TextDirection.ltr,
         )..layout();
-        tp.paint(canvas, Offset(17 - tp.width / 2, 17 - tp.height / 2));
+        tp.paint(canvas, Offset(13 - tp.width / 2, 13 - tp.height / 2));
       });
 
       final youPill = await _pillBitmap('You', small: true);
-      final pickupPill = await _pillBitmap('Pickup spot');
+      final pickupPill = await _pillBitmap(_restaurantName);
 
       if (!mounted) return;
       setState(() {
@@ -306,6 +360,14 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     final pill = await _pillBitmap(text);
     if (mounted && text == _milesPillText) {
       setState(() => _milesPillIcon = pill);
+    }
+  }
+
+  Future<void> _updatePickupPill(String text) async {
+    final label = text.trim().isEmpty ? 'Restaurant' : text.trim();
+    final pill = await _pillBitmap(label);
+    if (mounted && _restaurantName == label) {
+      setState(() => _pickupPillIcon = pill);
     }
   }
 
@@ -339,6 +401,38 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
         .animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
   }
 
+  Future<void> _smoothFollowRider(LatLng rider, LatLng target) async {
+    final controller = _mapController;
+    if (controller == null || _userControllingMap) return;
+
+    final now = DateTime.now();
+    if (_lastCameraFollowAt != null &&
+        now.difference(_lastCameraFollowAt!).inMilliseconds < 2500) {
+      return;
+    }
+    _lastCameraFollowAt = now;
+
+    final distance = _distanceBetween(rider, target);
+    final zoom = distance > 1200
+        ? 14.6
+        : distance > 600
+            ? 15.2
+            : 16.0;
+
+    _cameraAnimatingProgrammatically = true;
+    try {
+      await controller.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: rider, zoom: zoom),
+        ),
+      );
+    } finally {
+      Future.delayed(const Duration(milliseconds: 250), () {
+        _cameraAnimatingProgrammatically = false;
+      });
+    }
+  }
+
   // Call Google Directions API and decode the polyline into road points.
   // On web the browser blocks the API with CORS, so we route the request
   // through a public CORS proxy. If everything fails we fall back to a
@@ -362,7 +456,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
         if (data['routes'] != null && (data['routes'] as List).isNotEmpty) {
           final encoded =
               data['routes'][0]['overview_polyline']['points'] as String;
-          final pts = _decodePolyline(encoded);
+          final pts = _thinRoute(_decodePolyline(encoded));
           if (pts.length >= 2) return pts;
         }
       }
@@ -371,7 +465,22 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     }
     // Fallback: a gently curved multi-point path so movement looks natural
     // even when the Directions API is unavailable.
-    return _curvedFallback(origin, dest);
+    return _thinRoute(_curvedFallback(origin, dest));
+  }
+
+  List<LatLng> _thinRoute(List<LatLng> points, {int maxPoints = 34}) {
+    if (points.length <= maxPoints) return points;
+    final last = points.length - 1;
+    final step = last / (maxPoints - 1);
+    final thinned = <LatLng>[];
+    for (var i = 0; i < maxPoints; i++) {
+      final index = (i * step).round().clamp(0, last);
+      if (thinned.isEmpty || thinned.last != points[index]) {
+        thinned.add(points[index]);
+      }
+    }
+    if (thinned.last != points.last) thinned.add(points.last);
+    return thinned;
   }
 
   // Builds a smooth curved path between two points (quadratic bezier with a
@@ -478,9 +587,8 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     _usingLiveRiderFeed = true;
 
     // Miles pill: distance still to drive to the current target.
-    final target = _currentStatus == 'finding_rider'
-        ? _restaurantLatLng
-        : _deliveryLatLng;
+    final target =
+        _currentStatus == 'finding_rider' ? _restaurantLatLng : _deliveryLatLng;
     final miles = _distanceBetween(nextPosition, target) / 1609.34;
     unawaited(
         _updateMilesPill('${math.max(0.05, miles).toStringAsFixed(1)} miles'));
@@ -590,7 +698,9 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     if (toRestaurant.length < 2) toRestaurant = [start, _restaurantLatLng];
     List<LatLng> toCustomer =
         await _fetchRoute(_restaurantLatLng, _deliveryLatLng);
-    if (toCustomer.length < 2) toCustomer = [_restaurantLatLng, _deliveryLatLng];
+    if (toCustomer.length < 2) {
+      toCustomer = [_restaurantLatLng, _deliveryLatLng];
+    }
 
     if (!mounted || _usingLiveRiderFeed) {
       _demoRunning = false;
@@ -605,8 +715,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       _routePoints = toRestaurant;
     });
 
-    final totalTicks =
-        _demoTotal.inMilliseconds ~/ _demoTick.inMilliseconds;
+    final totalTicks = _demoTotal.inMilliseconds ~/ _demoTick.inMilliseconds;
     var elapsedTicks = 0;
 
     _demoTimer?.cancel();
@@ -661,6 +770,8 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       _routePoints = remaining;
       _demoStatus = status;
     });
+
+    unawaited(_smoothFollowRider(next, target));
 
     // Miles pill next to the pickup spot (design: distance still to drive).
     final miles = _distanceBetween(next, target) / 1609.34;
@@ -808,7 +919,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       markerId: const MarkerId('customer_pin'),
       position: _deliveryLatLng,
       icon: _customerPinIcon ?? BitmapDescriptor.defaultMarker,
-      anchor: const Offset(0.5, 1.0),
+      anchor: const Offset(0.5, 0.5),
       zIndexInt: 3,
     ));
     if (_youPillIcon != null) {
@@ -862,7 +973,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
         polylineId: const PolylineId('route'),
         points: _routePoints,
         color: _routeBlack,
-        width: 6,
+        width: 5,
         startCap: Cap.roundCap,
         endCap: Cap.roundCap,
         jointType: JointType.round,
@@ -880,18 +991,18 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
 
     final t = _pulseController?.value ?? 0.0;
     const accent = Color(0xFFA855F7);
-    // Three staggered rings expanding from ~30m to ~220m.
-    for (var i = 0; i < 3; i++) {
-      final localT = ((t + i / 3) % 1.0);
-      final radius = 30 + localT * 190;
+    // Two light rings only; animated map circles are expensive on phones.
+    for (var i = 0; i < 2; i++) {
+      final localT = ((t + i / 2) % 1.0);
+      final radius = 35 + localT * 120;
       final fade = (1 - localT).clamp(0.0, 1.0);
       circles.add(Circle(
         circleId: CircleId('radar_$i'),
         center: _restaurantLatLng,
         radius: radius,
-        fillColor: accent.withValues(alpha: 0.05 * fade),
-        strokeColor: accent.withValues(alpha: 0.5 * fade),
-        strokeWidth: 2,
+        fillColor: accent.withValues(alpha: 0.025 * fade),
+        strokeColor: accent.withValues(alpha: 0.28 * fade),
+        strokeWidth: 1,
       ));
     }
     return circles;
@@ -913,6 +1024,66 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
     return null;
   }
 
+  LatLng? _extractLatLng(dynamic value) {
+    if (value is GeoPoint) {
+      return LatLng(value.latitude, value.longitude);
+    }
+    if (value is Map) {
+      final lat = _toDouble(value['latitude'] ?? value['lat']);
+      final lng = _toDouble(value['longitude'] ?? value['lng']);
+      if (lat != null && lng != null) return LatLng(lat, lng);
+    }
+    return null;
+  }
+
+  DateTime? _readTimestamp(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
+  }
+
+  String _localDemoStatus(String remoteStatus) {
+    _usingLocalDemoFlow = false;
+    if (remoteStatus != 'confirmed' || _orderCreatedAt == null) {
+      return remoteStatus;
+    }
+
+    final elapsed = DateTime.now().difference(_orderCreatedAt!);
+    if (elapsed < _placedHold) return 'confirmed';
+    if (elapsed < _placedHold + _preparingHold) return 'preparing';
+
+    _usingLocalDemoFlow = true;
+    return 'finding_rider';
+  }
+
+  Future<void> _loadRestaurantLocation(String restaurantId) async {
+    if (restaurantId.isEmpty || _restaurantLocationLookupId == restaurantId) {
+      return;
+    }
+    _restaurantLocationLookupId = restaurantId;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(restaurantId)
+          .get();
+      final data = snap.data();
+      final location = data == null
+          ? null
+          : (_extractLatLng(data['location']) ??
+              _extractLatLng({
+                'latitude': data['latitude'],
+                'longitude': data['longitude'],
+              }));
+      if (!mounted || location == null) return;
+      setState(() {
+        _restaurantLatLng = location;
+        _cameraOnRestaurant = false;
+      });
+    } catch (e) {
+      debugPrint('Could not load restaurant pickup location: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
@@ -924,9 +1095,21 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
         if (snapshot.hasData && snapshot.data!.exists) {
           final data = snapshot.data!.data() as Map<String, dynamic>;
           final previousStatus = _currentStatus;
-          _currentStatus = (data['orderStatus'] ?? 'confirmed').toString();
+          final remoteStatus = (data['orderStatus'] ?? 'confirmed').toString();
+          _orderCreatedAt ??= _readTimestamp(data['createdAt']) ??
+              _readTimestamp(data['orderDate']) ??
+              DateTime.now();
+          _currentStatus = _localDemoStatus(remoteStatus);
           _rejectionReason = (data['rejectionReason'] ?? '').toString();
           _assignedRider = _extractAssignedRider(data);
+          final nextRestaurantName =
+              (data['restaurantName'] ?? 'Restaurant').toString().trim();
+          if (nextRestaurantName.isNotEmpty &&
+              nextRestaurantName != _restaurantName) {
+            _restaurantName = nextRestaurantName;
+            WidgetsBinding.instance.addPostFrameCallback(
+                (_) => _updatePickupPill(_restaurantName));
+          }
           final address = data['deliveryAddress'] as Map<String, dynamic>?;
           if (address != null && address['latitude'] != null) {
             final lat = _toDouble(address['latitude']);
@@ -934,8 +1117,27 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
             if (lat != null && lng != null) {
               _deliveryLatLng = LatLng(lat, lng);
             }
-            _restaurantLatLng = LatLng(_deliveryLatLng.latitude + 0.011,
-                _deliveryLatLng.longitude + 0.011);
+            if (_restaurantLocationLookupId == null) {
+              _restaurantLatLng = LatLng(_deliveryLatLng.latitude + 0.011,
+                  _deliveryLatLng.longitude + 0.011);
+            }
+          }
+
+          final orderRestaurantLocation =
+              _extractLatLng(data['restaurantLocation']) ??
+                  _extractLatLng({
+                    'latitude': data['restaurantLatitude'],
+                    'longitude': data['restaurantLongitude'],
+                  });
+          if (orderRestaurantLocation != null) {
+            _restaurantLatLng = orderRestaurantLocation;
+          } else {
+            final restaurantId = (data['restaurantId'] ?? '').toString();
+            if (restaurantId.isNotEmpty &&
+                _restaurantLocationLookupId != restaurantId) {
+              WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _loadRestaurantLocation(restaurantId));
+            }
           }
 
           final riderLocation = data['riderLocation'];
@@ -951,7 +1153,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
               ),
             );
           } else if (_liveTrackingStatuses.contains(_currentStatus) &&
-              hasRider &&
+              (hasRider || _usingLocalDemoFlow) &&
               !_usingLiveRiderFeed) {
             // Rider assigned (e.g. by admin) but no live GPS — run demo.
             WidgetsBinding.instance
@@ -989,6 +1191,12 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
             WidgetsBinding.instance.addPostFrameCallback((_) => _onDelivered());
           }
         }
+
+        final showMapPanel = !const {
+          'confirmed',
+          'processing',
+          'received',
+        }.contains(_currentStatus);
 
         return Scaffold(
           backgroundColor: Colors.white,
@@ -1034,31 +1242,52 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
                   // from an Animation listener.
                   Expanded(
                     flex: 3,
-                    child: GoogleMap(
-                      key: const ValueKey('order_status_map'),
-                      onMapCreated: (c) {
-                        _mapController = c;
-                        // If the order is still with the restaurant when the
-                        // map appears, start focused on the restaurant.
-                        if (_isPreRiderPhase) {
-                          _cameraOnRestaurant = true;
-                          c.animateCamera(CameraUpdate.newLatLngZoom(
-                              _restaurantLatLng, 15.5));
-                        }
-                      },
-                      initialCameraPosition:
-                          CameraPosition(target: _deliveryLatLng, zoom: 15),
-                      markers: _buildMarkers(),
-                      polylines: _buildPolylines(),
-                      circles: _buildCircles(),
-                      zoomControlsEnabled: false,
-                      myLocationButtonEnabled: false,
-                      // Perf: skip expensive layers this screen never uses.
-                      buildingsEnabled: false,
-                      tiltGesturesEnabled: false,
-                      mapToolbarEnabled: false,
-                      compassEnabled: false,
-                      trafficEnabled: false,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 280),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: showMapPanel
+                          ? GoogleMap(
+                              key: const ValueKey('order_status_map'),
+                              onMapCreated: (c) {
+                                _mapController = c;
+                                // If the order is still with the restaurant when the
+                                // map appears, start focused on the restaurant.
+                                if (_isPreRiderPhase) {
+                                  _cameraOnRestaurant = true;
+                                  c.animateCamera(CameraUpdate.newLatLngZoom(
+                                      _restaurantLatLng, 15.5));
+                                }
+                              },
+                              onCameraMoveStarted: () {
+                                if (_cameraAnimatingProgrammatically) return;
+                                _userControllingMap = true;
+                                _userMapResumeTimer?.cancel();
+                                _userMapResumeTimer = Timer(
+                                  const Duration(seconds: 4),
+                                  () {
+                                    if (mounted) _userControllingMap = false;
+                                  },
+                                );
+                              },
+                              initialCameraPosition: CameraPosition(
+                                  target: _restaurantLatLng, zoom: 15.5),
+                              markers: _buildMarkers(),
+                              polylines: _buildPolylines(),
+                              circles: _buildCircles(),
+                              zoomControlsEnabled: false,
+                              zoomGesturesEnabled: true,
+                              scrollGesturesEnabled: true,
+                              rotateGesturesEnabled: false,
+                              myLocationButtonEnabled: false,
+                              // Perf: skip expensive layers this screen never uses.
+                              buildingsEnabled: false,
+                              tiltGesturesEnabled: false,
+                              mapToolbarEnabled: false,
+                              compassEnabled: false,
+                              trafficEnabled: false,
+                            )
+                          : _buildOrderPlacedIntro(),
                     ),
                   ),
 
@@ -1097,6 +1326,49 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildOrderPlacedIntro() {
+    return Container(
+      key: const ValueKey('order_placed_intro'),
+      width: double.infinity,
+      color: const Color(0xFFF7F3FF),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 86,
+              height: 86,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A22A8).withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.receipt_long,
+                  color: Color(0xFF4A22A8), size: 42),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Order placed',
+              style: TextStyle(
+                color: Color(0xFF4A22A8),
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Sending it to the restaurant',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1196,8 +1468,8 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
   // Purple "ETA · N MIN" pill, matching the Rider Tracking Map design.
   String? get _etaMinutesText {
     switch (_currentStatus) {
+      case 'finding_rider':
       case 'picked_up':
-        return '9 MIN';
       case 'on_the_way':
         return '5 MIN';
       case 'delivered':
@@ -1212,7 +1484,8 @@ class _OrderStatusScreenState extends State<OrderStatusScreen>
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF4A22A8).withValues(alpha: 0.10),
-        border: Border.all(color: const Color(0xFF4A22A8).withValues(alpha: 0.20)),
+        border:
+            Border.all(color: const Color(0xFF4A22A8).withValues(alpha: 0.20)),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Column(

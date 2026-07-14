@@ -34,6 +34,7 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
   bool _isPaymentProcessing = false;
   bool _isCreatingOrder = false;
   bool _orderCreated = false;
+  bool _processingDialogVisible = false;
 
   @override
   void initState() {
@@ -46,6 +47,50 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
     final random = Random();
     final randomNumbers = (100000 + random.nextInt(900000)).toString();
     return 'ORD$randomNumbers';
+  }
+
+  double? _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return null;
+  }
+
+  Map<String, double>? _extractRestaurantLocation(Map<String, dynamic> data) {
+    final location = data['location'];
+    final lat = _asDouble(data['latitude']) ??
+        (location is Map
+            ? _asDouble(location['latitude'] ?? location['lat'])
+            : location is GeoPoint
+                ? location.latitude
+                : null);
+    final lng = _asDouble(data['longitude']) ??
+        (location is Map
+            ? _asDouble(location['longitude'] ?? location['lng'])
+            : location is GeoPoint
+                ? location.longitude
+                : null);
+
+    if (lat == null || lng == null) return null;
+    return {
+      'latitude': lat,
+      'longitude': lng,
+    };
+  }
+
+  Future<Map<String, double>?> _loadRestaurantLocation(
+      String restaurantId) async {
+    if (restaurantId.isEmpty) return null;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(restaurantId)
+          .get();
+      final data = snap.data();
+      if (data == null) return null;
+      return _extractRestaurantLocation(data);
+    } catch (e) {
+      debugPrint('Could not load restaurant location: $e');
+      return null;
+    }
   }
 
   /// Create PaymentIntent on backend via StripeService
@@ -123,11 +168,15 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
             .toString();
       }
 
+      final restaurantLocation = await _loadRestaurantLocation(restaurantId);
+
       final orderData = {
         'orderId': orderId,
         'userId': user.uid,
         'restaurantId': restaurantId,
         'restaurantName': restaurantName,
+        if (restaurantLocation != null)
+          'restaurantLocation': restaurantLocation,
         'paymentIntentId': paymentIntentId,
         'orderDate': now,
         'createdAt': now,
@@ -214,9 +263,7 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
 
       if (!mounted) return;
 
-      if (navigator.canPop()) {
-        navigator.pop();
-      }
+      _hideProcessingDialog(navigator);
 
       if (success) {
         setState(() {
@@ -230,12 +277,15 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
             widget.onPaymentResult(true, _paymentIntent!['id']);
 
             if (mounted) {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(
-                  builder: (context) => OrderStatusScreen(orderId: orderId),
-                ),
-                (route) => false,
-              );
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(
+                    builder: (context) => OrderStatusScreen(orderId: orderId),
+                  ),
+                  (route) => false,
+                );
+              });
             }
           }
         } catch (e) {
@@ -256,9 +306,7 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
       if (mounted) {
         print('Stripe Error: $e'); // more detailed logging for Stripe errors
 
-        if (navigator.canPop()) {
-          navigator.pop();
-        }
+        _hideProcessingDialog(navigator);
         setState(
             () => _errorMessage = e.toString().replaceAll('Exception: ', ''));
         _showErrorDialog(
@@ -453,6 +501,7 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
   }
 
   void _showProcessingDialog() {
+    _processingDialogVisible = true;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -474,6 +523,15 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
         ),
       ),
     );
+  }
+
+  void _hideProcessingDialog([NavigatorState? navigator]) {
+    if (!_processingDialogVisible) return;
+    _processingDialogVisible = false;
+    final nav = navigator ?? Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+    }
   }
 
   void _showErrorDialog(String title, String msg) {
