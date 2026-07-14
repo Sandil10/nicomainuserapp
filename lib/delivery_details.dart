@@ -471,6 +471,27 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
     }
   }
 
+  /// Cart items only carry `restaurantId` (a foreign key) — no product ever
+  /// has `restaurantName` set — so the order's restaurant name must be
+  /// looked up from the `restaurants` doc, otherwise the tracking map falls
+  /// back to the literal placeholder "Restaurant".
+  Future<String?> _loadRestaurantName(String restaurantId) async {
+    if (restaurantId.isEmpty) return null;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(restaurantId)
+          .get();
+      final data = snap.data();
+      if (data == null) return null;
+      final name = (data['name'] ?? data['restaurantName'] ?? '').toString().trim();
+      return name.isEmpty ? null : name;
+    } catch (e) {
+      debugPrint('Could not load restaurant name: $e');
+      return null;
+    }
+  }
+
   Future<String> _createOrderInFirestore(Map<String, dynamic> details) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('User not authenticated');
@@ -502,6 +523,9 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen>
     }
 
     final restaurantLocation = await _loadRestaurantLocation(restaurantId);
+    // The cart-item guess above is almost always empty (products don't carry
+    // a restaurant name) — the restaurants doc is the source of truth.
+    restaurantName = await _loadRestaurantName(restaurantId) ?? restaurantName;
 
     final orderData = {
       'orderId': orderId,

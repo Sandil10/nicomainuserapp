@@ -548,11 +548,37 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
               ),
             ),
             child: SafeArea(
+              // First-load only: fades/slides the whole shell in once. Using
+              // IndexedStack below (instead of rebuilding a fresh subtree per
+              // tab) keeps each tab's widgets and state alive across
+              // switches, so tapping Cart no longer tears down and re-mounts
+              // the ongoing-order card — that remount was the "hover in/out"
+              // pop, since the card's live Firestore data had to reload cold
+              // every time.
               child: SlideTransition(
                 position: _slideAnimation,
                 child: FadeTransition(
                   opacity: _fadeAnimation,
-                  child: _getCurrentScreen(),
+                  child: IndexedStack(
+                    index: _currentIndex,
+                    children: [
+                      _buildDashboardHome(context),
+                      _hasOngoingOrder
+                          ? _buildOngoingOrderView()
+                          : Cart(
+                              cartItems: cartItems,
+                              onRemoveFromCart: _removeFromCart,
+                              onUpdateCartItem: _onUpdateCartItem,
+                              onBack: null,
+                            ),
+                      SettingsUser(
+                        darkMode: _darkMode,
+                        onDarkModeChanged: (value) =>
+                            setState(() => _darkMode = value),
+                      ),
+                      const About(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -646,44 +672,39 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
     );
   }
 
-  Widget _getCurrentScreen() {
-    switch (_currentIndex) {
-      case 0:
-        return _buildDashboardHome(context);
-      case 1:
-        // While an order is ongoing, the cart tab shows its live status.
-        if (_hasOngoingOrder) return _buildOngoingOrderView();
-        return Cart(
-          cartItems: cartItems,
-          onRemoveFromCart: _removeFromCart,
-          onUpdateCartItem: _onUpdateCartItem,
-          onBack: null,
-        );
-      case 2:
-        return SettingsUser(
-          darkMode: _darkMode,
-          onDarkModeChanged: (value) => setState(() => _darkMode = value),
-        );
-      case 3:
-        return const About();
-      default:
-        return Container(); // Should not happen
-    }
-  }
-
   // Maps an order status to a friendly label + step (1..4).
+  // Mirrors OrderStatusScreen's _buildStatusHeader/_stageIndex exactly, so
+  // this mini-card never disagrees with the real tracking screen.
   ({String label, String sub, int step}) _statusInfo(String status) {
     switch (status) {
+      case 'confirmed':
+        return (
+          label: 'Order placed',
+          sub: 'Waiting for the restaurant to accept your order',
+          step: 0
+        );
       case 'preparing':
         return (
           label: 'Preparing your order',
           sub: 'Restaurant is getting it ready',
+          step: 1
+        );
+      case 'ready':
+        return (
+          label: 'Restaurant pickup ready',
+          sub: 'The restaurant has your order ready for pickup',
           step: 2
         );
       case 'finding_rider':
         return (
-          label: 'Heading your way',
-          sub: 'Rider is picking up your order',
+          label: 'Finding rider',
+          sub: 'We are matching a rider for your order',
+          step: 2
+        );
+      case 'picked_up':
+        return (
+          label: 'Picked up',
+          sub: 'Your rider has collected the order',
           step: 3
         );
       case 'on_the_way':
@@ -692,14 +713,28 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
           sub: 'Rider is on the way to you',
           step: 3
         );
+      case 'delivered':
+        return (label: 'Delivered!', sub: 'Enjoy your order', step: 4);
+      case 'cancelled':
+        return (label: 'Order Cancelled', sub: 'Order was stopped', step: 0);
+      case 'rejected':
+        return (
+          label: 'Order Rejected',
+          sub: 'The restaurant could not accept your order',
+          step: 0
+        );
       default:
         return (
-          label: 'Order placed',
-          sub: 'Waiting for restaurant to accept',
-          step: 1
+          label: 'Hanging tight...',
+          sub: 'Waiting for restaurant to receive your order',
+          step: 0
         );
     }
   }
+
+  // A rider is assigned once we've moved past "waiting for restaurant".
+  bool _hasAssignedRider(String status) =>
+      status == 'finding_rider' || status == 'picked_up' || status == 'on_the_way';
 
   // The cart tab content while an order is ongoing: an "Ongoing" heading and
   // a live status card that opens the full tracking screen on tap.
@@ -745,8 +780,14 @@ class _UserPanelState extends State<UserPanel> with TickerProviderStateMixin {
                             color: primaryPurple,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.delivery_dining,
-                              color: Colors.white),
+                          // Bike icon once a rider is on the job (matches the
+                          // real tracking screen); a plate icon before that.
+                          child: Icon(
+                            _hasAssignedRider(status)
+                                ? Icons.pedal_bike
+                                : Icons.restaurant,
+                            color: Colors.white,
+                          ),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
